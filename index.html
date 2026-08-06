@@ -91,6 +91,7 @@
               <span id="peer-status" class="peer-status">অফলাইন</span>
             </div>
             <div class="call-actions">
+              <button id="call-history-btn" class="icon-btn" title="কল হিস্ট্রি" aria-label="কল হিস্ট্রি">🕑</button>
               <button id="voice-call-btn" class="icon-btn" title="ভয়েস কল" aria-label="ভয়েস কল">📞</button>
               <button id="video-call-btn" class="icon-btn accent" title="ভিডিও কল" aria-label="ভিডিও কল">🎥</button>
             </div>
@@ -98,10 +99,38 @@
 
           <div id="messages" class="messages" aria-live="polite"></div>
 
+          <div id="typing-indicator" class="typing-indicator hidden">লিখছে...</div>
+
+          <div id="reply-preview" class="reply-preview hidden">
+            <div class="reply-preview-body">
+              <span class="reply-preview-label">উত্তর দিচ্ছেন</span>
+              <span id="reply-preview-text"></span>
+            </div>
+            <button id="reply-preview-close" class="icon-btn sm" aria-label="বাতিল">✕</button>
+          </div>
+
+          <div id="edit-banner" class="reply-preview hidden">
+            <div class="reply-preview-body">
+              <span class="reply-preview-label">মেসেজ এডিট করছেন</span>
+            </div>
+            <button id="edit-banner-close" class="icon-btn sm" aria-label="বাতিল">✕</button>
+          </div>
+
           <form id="composer" class="composer">
+            <button type="button" id="attach-btn" class="icon-btn" title="ফাইল/ছবি পাঠান" aria-label="সংযুক্ত করুন">📎</button>
+            <input id="file-input" type="file" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.txt" />
             <input id="message-input" type="text" placeholder="একটা বার্তা লিখুন..." autocomplete="off" />
+            <button type="button" id="mic-record-btn" class="icon-btn" title="ভয়েস মেসেজ" aria-label="ভয়েস মেসেজ রেকর্ড করুন">🎤</button>
             <button type="submit" class="send-btn" aria-label="পাঠান">➤</button>
           </form>
+
+          <div id="recording-bar" class="recording-bar hidden">
+            <span class="recording-dot"></span>
+            <span id="recording-time">０:００</span>
+            <span class="recording-hint">রেকর্ড হচ্ছে...</span>
+            <button id="recording-cancel-btn" class="icon-btn sm" aria-label="বাতিল">✕</button>
+            <button id="recording-send-btn" class="send-btn sm" aria-label="পাঠান">➤</button>
+          </div>
         </div>
       </main>
     </section>
@@ -122,13 +151,25 @@
           <video id="remote-video" autoplay playsinline></video>
           <video id="local-video" autoplay playsinline muted></video>
         </div>
+        <div class="remote-tiles hidden" id="remote-tiles"></div>
 
         <div class="call-controls">
           <button id="toggle-mic-btn" class="call-btn" aria-label="মাইক">🎙️</button>
           <button id="toggle-cam-btn" class="call-btn hidden" aria-label="ক্যামেরা">📷</button>
+          <button id="switch-cam-btn" class="call-btn hidden" aria-label="ক্যামেরা পাল্টান" title="সামনে/পেছনের ক্যামেরা">🔄</button>
+          <button id="speaker-btn" class="call-btn" aria-label="স্পিকার" title="স্পিকার/ইয়ারপিস">🔊</button>
           <button id="end-call-btn" class="call-btn danger" aria-label="কল শেষ করুন">⏹</button>
         </div>
       </div>
+    </section>
+
+    <!-- Call history panel -->
+    <section id="call-history-panel" class="call-history-panel hidden">
+      <header class="call-history-header">
+        <h3>কল হিস্ট্রি</h3>
+        <button id="close-call-history-btn" class="icon-btn" aria-label="বন্ধ করুন">✕</button>
+      </header>
+      <ul id="call-history-list" class="call-history-list"></ul>
     </section>
 
     <!-- Incoming call toast -->
@@ -147,6 +188,9 @@
         </div>
       </div>
     </div>
+
+    <!-- remote audio elements (audio-only calls এর জন্য; setSinkId স্পিকার-কন্ট্রোলের জন্য দরকার) -->
+    <audio id="remote-audio" autoplay playsinline></audio>
 
     <div id="toast-root" class="toast-root" aria-live="polite"></div>
   </div>
