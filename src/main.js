@@ -177,10 +177,14 @@ function renderSearchResults(results) {
         <div class="chat-item-preview">${escapeHtml(profile.email)}</div>
       </div>`;
     li.addEventListener('click', async () => {
-      const chatId = await getOrCreateDirectChat(currentUser.id, profile.id);
-      searchInput.value = '';
-      await refreshChatList();
-      openChat(chatId, profile);
+      try {
+        const chatId = await getOrCreateDirectChat(currentUser.id, profile.id);
+        searchInput.value = '';
+        await refreshChatList();
+        openChat(chatId, profile);
+      } catch (err) {
+        toast(err.message || 'চ্যাট খুলতে সমস্যা হয়েছে');
+      }
     });
     chatListEl.appendChild(li);
   }
@@ -209,7 +213,13 @@ async function refreshChatList() {
         </div>
         <div class="chat-item-preview">${preview}</div>
       </div>`;
-    li.addEventListener('click', () => openChat(chat.id, chat.peer));
+    li.addEventListener('click', async () => {
+      try {
+        await openChat(chat.id, chat.peer);
+      } catch (err) {
+        toast(err.message || 'চ্যাট খুলতে সমস্যা হয়েছে');
+      }
+    });
     chatListEl.appendChild(li);
   }
 }
