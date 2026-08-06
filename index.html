@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>Waves — Chat & Calls</title>
+  <meta name="description" content="Premium realtime chat, voice & video calling PWA" />
+  <meta name="theme-color" content="#0B1614" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Auth screen -->
+    <section id="auth-screen" class="screen">
+      <div class="auth-card">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="34" height="34">
+              <path d="M24 4C12.95 4 4 12.4 4 22.8c0 5.5 2.5 10.4 6.5 13.8L9 44l8.2-3.4c2.2.7 4.5 1 6.8 1 11.05 0 20-8.4 20-18.8S35.05 4 24 4z" fill="url(#g)"/>
+              <defs>
+                <linearGradient id="g" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#2BBE94"/>
+                  <stop offset="1" stop-color="#177A61"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <h1>Waves</h1>
+          <p class="tagline">শান্ত, দ্রুত, নিরাপদ কথোপকথন</p>
+        </div>
+
+        <form id="auth-form" class="auth-form">
+          <label class="field">
+            <span>ইমেইল</span>
+            <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email" />
+          </label>
+          <div id="otp-row" class="field hidden">
+            <span>OTP কোড</span>
+            <input type="text" id="auth-otp" placeholder="৬-সংখ্যার কোড" inputmode="numeric" maxlength="6" />
+          </div>
+          <button type="submit" id="auth-submit" class="btn-primary">ম্যাজিক কোড পাঠান</button>
+          <p id="auth-msg" class="auth-msg" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Main app shell -->
+    <section id="main-screen" class="screen hidden">
+      <aside id="sidebar" class="sidebar">
+        <header class="sidebar-header">
+          <div class="me">
+            <div class="avatar-ring" id="my-avatar-ring">
+              <img id="my-avatar" class="avatar" src="" alt="" />
+            </div>
+            <div class="me-info">
+              <strong id="my-name">আমি</strong>
+              <span class="status-pill">অনলাইন</span>
+            </div>
+          </div>
+          <button id="logout-btn" class="icon-btn" title="লগ আউট" aria-label="লগ আউট">⏻</button>
+        </header>
+
+        <div class="search-row">
+          <input id="search-input" type="search" placeholder="নাম বা ইমেইল দিয়ে খুঁজুন..." />
+        </div>
+
+        <ul id="chat-list" class="chat-list" aria-label="চ্যাট তালিকা"></ul>
+      </aside>
+
+      <main id="chat-pane" class="chat-pane">
+        <div id="empty-state" class="empty-state">
+          <div class="empty-mark">〰️</div>
+          <h2>একটা চ্যাট বেছে নিন</h2>
+          <p>বাম পাশ থেকে কাউকে সিলেক্ট করে কথোপকথন শুরু করুন</p>
+        </div>
+
+        <div id="active-chat" class="active-chat hidden">
+          <header class="chat-header">
+            <button id="back-btn" class="icon-btn back-btn" aria-label="পেছনে">←</button>
+            <div class="avatar-ring sm" id="peer-avatar-ring">
+              <img id="peer-avatar" class="avatar" src="" alt="" />
+            </div>
+            <div class="peer-info">
+              <strong id="peer-name">—</strong>
+              <span id="peer-status" class="peer-status">অফলাইন</span>
+            </div>
+            <div class="call-actions">
+              <button id="voice-call-btn" class="icon-btn" title="ভয়েস কল" aria-label="ভয়েস কল">📞</button>
+              <button id="video-call-btn" class="icon-btn accent" title="ভিডিও কল" aria-label="ভিডিও কল">🎥</button>
+            </div>
+          </header>
+
+          <div id="messages" class="messages" aria-live="polite"></div>
+
+          <form id="composer" class="composer">
+            <input id="message-input" type="text" placeholder="একটা বার্তা লিখুন..." autocomplete="off" />
+            <button type="submit" class="send-btn" aria-label="পাঠান">➤</button>
+          </form>
+        </div>
+      </main>
+    </section>
+
+    <!-- Call overlay -->
+    <section id="call-overlay" class="call-overlay hidden">
+      <div class="call-bg"></div>
+      <div class="call-content">
+        <div class="call-avatar-wrap">
+          <div class="avatar-ring lg pulsing" id="call-avatar-ring">
+            <img id="call-avatar" class="avatar" src="" alt="" />
+          </div>
+        </div>
+        <h2 id="call-peer-name">—</h2>
+        <p id="call-status">রিং হচ্ছে...</p>
+
+        <div class="video-grid hidden" id="video-grid">
+          <video id="remote-video" autoplay playsinline></video>
+          <video id="local-video" autoplay playsinline muted></video>
+        </div>
+
+        <div class="call-controls">
+          <button id="toggle-mic-btn" class="call-btn" aria-label="মাইক">🎙️</button>
+          <button id="toggle-cam-btn" class="call-btn hidden" aria-label="ক্যামেরা">📷</button>
+          <button id="end-call-btn" class="call-btn danger" aria-label="কল শেষ করুন">⏹</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Incoming call toast -->
+    <div id="incoming-call" class="incoming-call hidden">
+      <div class="incoming-card">
+        <div class="avatar-ring sm pulsing">
+          <img id="incoming-avatar" class="avatar" src="" alt="" />
+        </div>
+        <div class="incoming-info">
+          <strong id="incoming-name">—</strong>
+          <span id="incoming-type">ভয়েস কল আসছে</span>
+        </div>
+        <div class="incoming-actions">
+          <button id="decline-call-btn" class="call-btn danger sm">✕</button>
+          <button id="accept-call-btn" class="call-btn accent sm">✓</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
