@@ -308,12 +308,23 @@ create policy "users can delete their own push subscriptions"
   on public.push_subscriptions for delete
   using (user_id = auth.uid());
 
--- ---------- realtime ----------
-alter publication supabase_realtime add table public.messages;
-alter publication supabase_realtime add table public.profiles;
-alter publication supabase_realtime add table public.message_receipts;
-alter publication supabase_realtime add table public.message_reactions;
-alter publication supabase_realtime add table public.call_logs;
+-- ---------- realtime (idempotent — আগে থেকে যোগ করা থাকলে স্কিপ করে) ----------
+do $$
+declare
+  tbl text;
+begin
+  foreach tbl in array array['messages', 'profiles', 'message_receipts', 'message_reactions', 'call_logs']
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = tbl
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', tbl);
+    end if;
+  end loop;
+end $$;
 
 -- ---------- STORAGE: ভয়েস নোট ও ফাইল শেয়ারের জন্য বাকেট ----------
 insert into storage.buckets (id, name, public)
@@ -353,31 +364,32 @@ create trigger trg_touch_chat
 -- STEP 4: Web Push ট্রিগার — নতুন মেসেজ/কল হলে Edge Function কল করে
 -- push_subscriptions-এ থাকা ডিভাইসগুলোতে নোটিফিকেশন পাঠানো হয়।
 -- এর জন্য pg_net এক্সটেনশন লাগবে (Supabase-এ ডিফল্ট এনাবল করা থাকে)।
+--
+-- ⚠️ গুরুত্বপূর্ণ: এখানে URL/secret সরাসরি ফাংশনের ভেতরে হার্ডকোড করা হয়
+-- (আগে `current_setting('app.settings.x')` দিয়ে করা হতো, কিন্তু Supabase-এ
+-- session-level GUC অনেক সময় নতুন কানেকশনে propagate হয় না, ফলে ট্রিগার
+-- নীরবে স্কিপ হয়ে যেত এবং পুশ কখনোই পাঠানো হতো না — কোনো এরর ছাড়াই)।
+--
+-- নিচের STEP 4 রান করার আগে দুই জায়গায় বসান:
+--   ১) <PROJECT_REF> কে আপনার Supabase প্রজেক্ট রেফ দিয়ে বদলান
+--   ২) <WEBHOOK_SECRET> কে আপনার supabase secrets set WEBHOOK_SECRET=... এ
+--      যেটা বসিয়েছেন ঠিক সেটা দিয়ে বদলান
 -- =====================================================================
 create extension if not exists pg_net with schema extensions;
-
--- এই সেটিংস দুটো Supabase Dashboard > Project Settings > Database > Custom Config এ,
--- অথবা নিচের ALTER DATABASE কমান্ড রান করে সেট করুন (আপনার প্রজেক্টের রেফ ও ফাংশন
--- সিক্রেট বসিয়ে):
---   alter database postgres set app.settings.edge_function_url = 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
---   alter database postgres set app.settings.edge_function_secret = '<আপনার নিজের গোপন সিক্রেট>';
--- (README-এর "Web Push সেটআপ" অংশে বিস্তারিত ধাপ আছে)
 
 create or replace function public.notify_new_message()
 returns trigger as $$
 declare
-  fn_url text;
-  fn_secret text;
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  fn_url := current_setting('app.settings.edge_function_url', true);
-  fn_secret := current_setting('app.settings.edge_function_secret', true);
-  if fn_url is null then
-    return new; -- Edge Function সেটআপ করা না থাকলে চুপচাপ স্কিপ করুন, ইনসার্ট ব্যর্থ হবে না
+  if fn_url like '%<PROJECT_REF>%' then
+    return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
   end if;
 
   perform net.http_post(
     url := fn_url,
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', coalesce(fn_secret, '')),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', fn_secret),
     body := jsonb_build_object(
       'type', 'message',
       'record', to_jsonb(new)
@@ -395,28 +407,38 @@ create trigger trg_notify_new_message
 create or replace function public.notify_new_call()
 returns trigger as $$
 declare
-  fn_url text;
-  fn_secret text;
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  fn_url := current_setting('app.settings.edge_function_url', true);
-  fn_secret := current_setting('app.settings.edge_function_secret', true);
-  if fn_url is null then
+  if fn_url like '%<PROJECT_REF>%' then
     return new;
   end if;
 
   perform net.http_post(
     url := fn_url,
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', coalesce(fn_secret, '')),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', fn_secret),
     body := jsonb_build_object(
       'type', 'call',
-      'record', to_jsonb(new)
+      'record', jsonb_build_object(
+        'id', new.call_id,
+        'target_user_id', new.user_id
+      )
     )
   );
   return new;
 end;
 $$ language plpgsql security definer;
 
+-- ⚠️ আগে এই ট্রিগারটা call_logs-এর insert-এ ছিল, কিন্তু client কোড আগে call_logs
+-- রো বানায় এবং *পরে* call_participants রো যোগ করে (addCallParticipant) — অর্থাৎ
+-- ট্রিগার call_logs ইনসার্টের সাথে সাথেই ফায়ার হতো, তখনো কোনো participant
+-- ডাটাবেসে ছিল না। ফলে Edge Function সবসময় recipientIds খালি পেত এবং কাউকে
+-- পুশ পাঠাতো না — অ্যাপ বন্ধ থাকলে কল নোটিফিকেশন না আসার এটাই মূল কারণ।
+-- এখন call_participants-এর insert-এ ট্রিগার বসানো হয়েছে, যেটা সবসময় পরে
+-- ঘটে এবং প্রতিটা participant রো-এর জন্য আলাদাভাবে ফায়ার হয় (তাই প্রতিটা
+-- প্রাপকের জন্য নিশ্চিতভাবে ডেটা থাকে)।
 drop trigger if exists trg_notify_new_call on public.call_logs;
-create trigger trg_notify_new_call
-  after insert on public.call_logs
+drop trigger if exists trg_notify_call_participant on public.call_participants;
+create trigger trg_notify_call_participant
+  after insert on public.call_participants
   for each row execute function public.notify_new_call();
