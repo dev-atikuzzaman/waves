@@ -380,8 +380,8 @@ create extension if not exists pg_net with schema extensions;
 create or replace function public.notify_new_message()
 returns trigger as $$
 declare
-  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-  fn_secret text := '<WEBHOOK_SECRET>';
+  fn_url text := 'https:muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
+  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
 begin
   if fn_url like '%<PROJECT_REF>%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
