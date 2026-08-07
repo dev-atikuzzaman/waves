@@ -1,6 +1,6 @@
 # Waves — WhatsApp-স্টাইল প্রিমিয়াম চ্যাট PWA
 
-Vite + Vanilla JavaScript + Supabase (Realtime, Auth, Postgres) দিয়ে বানানো একটা প্রিমিয়াম-ডিজাইনের রিয়েলটাইম চ্যাট PWA। ইমেইল OTP লগইন, লাইভ মেসেজিং, অনলাইন/অফলাইন প্রেজেন্স, এবং WebRTC-ভিত্তিক ভয়েস/ভিডিও কলিং আছে (Supabase Realtime Broadcast দিয়ে সিগন্যালিং)।
+Vite + Vanilla JavaScript + Supabase (Realtime, Auth, Postgres, Storage, Edge Functions) দিয়ে বানানো একটা প্রিমিয়াম-ডিজাইনের রিয়েলটাইম চ্যাট PWA। ইমেইল OTP লগইন, লাইভ মেসেজিং, অনলাইন/অফলাইন প্রেজেন্স, WebRTC-ভিত্তিক ভয়েস/ভিডিও/গ্রুপ কলিং এবং Web Push নোটিফিকেশন আছে।
 
 ## ফিচার
 - 📱 ইনস্টলযোগ্য PWA (manifest + service worker, অফলাইন অ্যাপ-শেল ক্যাশিং)
@@ -13,20 +13,24 @@ Vite + Vanilla JavaScript + Supabase (Realtime, Auth, Postgres) দিয়ে 
 - 📞🎥 WebRTC ভয়েস, ভিডিও ও গ্রুপ কলিং (mesh টপোলজি, Supabase চ্যানেল দিয়ে signaling — কোনো আলাদা সার্ভার লাগে না)
 - 🔊 স্পিকার/ইয়ারপিস টগল, 🔄 সামনে/পেছনের ক্যামেরা সুইচ (কল চলাকালীন)
 - 🕑 কল হিস্ট্রি (মিসড/উত্তর দেওয়া/প্রত্যাখ্যাত, সময়কালসহ) + এক ট্যাপে আবার কল
+- 🔔 **Web Push নোটিফিকেশন** — অ্যাপ ব্যাকগ্রাউন্ডে বা সম্পূর্ণ বন্ধ থাকলেও কল ও মেসেজের নেটিভ পপ-আপ (Supabase Edge Function + VAPID)
+- 🔊 ইন-অ্যাপ রিংটোন ও মেসেজ পিং সাউন্ড (Web Audio API দিয়ে সিন্থেসাইজড, কোনো external mp3 লাগে না)
 - 🎨 প্রিমিয়াম কাস্টম ডিজাইন সিস্টেম (Sora + Inter টাইপোগ্রাফি, ইমারেল্ড/গোল্ড ইঙ্ক প্যালেট)
 - 📱ফুল রেসপন্সিভ — মোবাইলে সিঙ্গেল-পেন WhatsApp-স্টাইল নেভিগেশন
 
-### কল বাগ ফিক্স (আগের ভার্সনে ছিল)
+### বাগ ফিক্স হিস্ট্রি
 - **অডিও ড্রপআউট**: ICE ক্যান্ডিডেট এখন remote description সেট হওয়ার আগে এলে সাময়িকভাবে জমা রাখা হয় (queue) এবং পরে flush করা হয়; আগে race condition-এর কারণে মাঝে মাঝে অডিও ট্র্যাক কানেক্ট হতো না। অডিও কনস্ট্রেইন্টে echoCancellation/noiseSuppression/autoGainControl স্পষ্টভাবে চালু রাখা হয়েছে।
 - **সরাসরি লাউডস্পিকার**: আগে স্পিকার/ইয়ারপিস কন্ট্রোলই ছিল না। এখন কল ওভারলেতে 🔊 বাটন দিয়ে `setSinkId` ব্যবহার করে আউটপুট ডিভাইস বাছাই করা যায় (সাপোর্টেড ব্রাউজারে)।
-- **ব্যাক ক্যামেরায় ব্ল্যাক স্ক্রিন**: আগে ভিডিও `facingMode: 'user'`-এ হার্ডকোড ছিল — ব্যাক ক্যামেরায় সুইচ করার কোনো উপায়ই ছিল না। এখন 🔄 বাটন দিয়ে `replaceTrack` ব্যবহার করে রিনিগোশিয়েশন ছাড়াই ক্যামেরা সুইচ হয়, সাথে `exact` constraint ব্যর্থ হলে fallback আছে।
+- **ব্যাক ক্যামেরায় ব্ল্যাক স্ক্রিন**: প্রথম রাউন্ডে `facingMode: 'user'` হার্ডকোড ঠিক করার পরও কিছু অ্যান্ড্রয়েড ডিভাইসে সমস্যা থেকে যায়, কারণ পুরনো ক্যামেরা ট্র্যাক বন্ধ না করেই নতুন `getUserMedia` কল করা হতো — একাধিক ক্যামেরা স্ট্রিম একসাথে চালু রাখতে গেলে হার্ডওয়্যার লক কনটেনশনে দ্বিতীয়টা কালো/ফ্রিজ হয়ে যেত। এখন প্রথমে পুরনো ট্র্যাক `stop()` করা হয়, তারপর `enumerateDevices()` দিয়ে প্রকৃত deviceId বের করে ক্যামেরা রিকোয়েস্ট করা হয় (exact facingMode-এর চেয়ে বেশি নির্ভরযোগ্য), সাথে তিন ধাপের fallback (deviceId → exact facingMode → ideal facingMode) আছে।
+- **কল/মেসেজে সাউন্ড না আসা**: ইন-অ্যাপ রিংটোন (ইনকামিং কল), রিংব্যাক টোন (আউটগোয়িং কল), এবং মেসেজ পিং যোগ করা হয়েছে — ট্যাব খোলা থাকলেই বাজবে।
+- **অ্যাপ ব্যাকগ্রাউন্ডে/বন্ধ থাকলে কল পপ-আপ না আসা**: সম্পূর্ণ Web Push স্ট্যাক যোগ করা হয়েছে (নিচে "Web Push সেটআপ" দেখুন) — এখন অ্যাপ সম্পূর্ণ বন্ধ থাকলেও OS-লেভেল নোটিফিকেশন আসবে।
 
 ## ১) প্রজেক্ট চালু করা (লোকাল)
 
 ```bash
 npm install
 cp .env.example .env
-# .env ফাইলে Supabase URL ও anon key বসান (নিচে দেখুন)
+# .env ফাইলে Supabase URL, anon key, VAPID public key বসান (নিচে দেখুন)
 npm run dev
 ```
 
@@ -39,7 +43,9 @@ npm run dev
    - `messages` — মেসেজ (টেক্সট/ভয়েস/ফাইল/ছবি, রিপ্লাই, এডিট, সফট-ডিলিট), সব Row Level Security দিয়ে সুরক্ষিত
    - `message_reactions`, `message_receipts` — রিয়েকশন ও ডেলিভারড/সিন টিক
    - `call_logs`, `call_participants` — কল হিস্ট্রি
+   - `push_subscriptions` — Web Push সাবস্ক্রিপশন (ডিভাইস-প্রতি একটা রো)
    - `attachments` নামে একটা পাবলিক Storage bucket (ভয়েস নোট/ফাইল/ছবির জন্য)
+   - নতুন মেসেজ/কলে Edge Function ট্রিগার করার জন্য `pg_net` এক্সটেনশন + ট্রিগার ফাংশন
 
    **আগে থেকে চলমান প্রজেক্টে আপগ্রেড করছেন?** পুরো `schema.sql` আবার রান করলেই যথেষ্ট (idempotent), অথবা শুধু `supabase/migration_5_premium_features.sql` রান করুন।
 3. **Authentication → Providers → Email** এ গিয়ে:
@@ -51,14 +57,72 @@ npm run dev
    - `anon public` key → `VITE_SUPABASE_ANON_KEY`
 6. **Database → Replication** এ গিয়ে নিশ্চিত করুন `messages` ও `profiles` টেবিল Realtime publication-এ আছে (স্কিমা স্ক্রিপ্টেই এটা করা হয়, তবু চেক করে নিন)।
 
-## ৩) Vercel-এ ডিপ্লয়
+## ৩) Web Push সেটআপ (কল/মেসেজ নোটিফিকেশন অ্যাপ বন্ধ থাকলেও পেতে)
+
+এই অংশ ছাড়া অ্যাপ পুরোপুরি কাজ করবে, কিন্তু ব্যবহারকারী ব্রাউজার ট্যাব/অ্যাপ বন্ধ করে দিলে বা অন্য অ্যাপে চলে গেলে কল/মেসেজের পপ-আপ পাবে না। ধাপগুলো একটু টেকনিক্যাল কিন্তু একবারই করতে হবে।
+
+### ৩.১ VAPID key জেনারেট করুন
+
+```bash
+npx web-push generate-vapid-keys
+```
+এটা একটা `Public Key` ও `Private Key` দেবে। **⚠️ এই README-এর সাথে কোনো ডেমো/placeholder VAPID key শেয়ার করা হয়নি — নিজে জেনারেট করে নিন, প্রতিটা ডিপ্লয়মেন্টের জন্য আলাদা key ব্যবহার করুন।**
+
+### ৩.২ Supabase CLI ইনস্টল ও লগইন করুন
+
+```bash
+npm install -g supabase
+supabase login
+supabase link --project-ref <আপনার-প্রজেক্ট-রেফ>
+```
+
+### ৩.৩ Edge Function সিক্রেট সেট করুন
+
+```bash
+supabase secrets set VAPID_PUBLIC_KEY=<৩.১ থেকে পাওয়া public key>
+supabase secrets set VAPID_PRIVATE_KEY=<৩.১ থেকে পাওয়া private key>
+supabase secrets set VAPID_SUBJECT=mailto:you@example.com
+supabase secrets set WEBHOOK_SECRET=<একটা লম্বা র‍্যান্ডম স্ট্রিং নিজে বানান>
+```
+`WEBHOOK_SECRET` জেনারেট করতে: `openssl rand -hex 32`
+
+### ৩.৪ Edge Function ডিপ্লয় করুন
+
+```bash
+supabase functions deploy send-push --no-verify-jwt
+```
+`--no-verify-jwt` দরকার কারণ Postgres ট্রিগার থেকে কল হবে, ইউজার সেশন থেকে না — এর বদলে `WEBHOOK_SECRET` হেডার দিয়ে যাচাই করা হয় (দেখুন `supabase/functions/send-push/index.ts`)।
+
+### ৩.৫ Postgres ট্রিগারকে Edge Function URL জানান
+
+SQL Editor-এ রান করুন (আপনার প্রজেক্ট রেফ ও ৩.৩-এর `WEBHOOK_SECRET` বসিয়ে):
+```sql
+alter database postgres set app.settings.edge_function_url = 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+alter database postgres set app.settings.edge_function_secret = '<WEBHOOK_SECRET>';
+```
+এটা রান না করলে trigger চুপচাপ push পাঠানো স্কিপ করবে (মেসেজ/কল পাঠাতে ব্যর্থ হবে না, শুধু নোটিফিকেশন যাবে না)।
+
+### ৩.৬ Frontend-এ VAPID public key বসান
+
+`.env`-এ:
+```
+VITE_VAPID_PUBLIC_KEY=<৩.১ থেকে পাওয়া public key — শুধু public, private key কখনোই ফ্রন্টএন্ডে দেবেন না>
+```
+
+### কীভাবে কাজ করে
+লগইনের পর অ্যাপ ব্রাউজার নোটিফিকেশন পারমিশন চায়। অনুমতি দিলে `push.js` ব্রাউজারের PushManager-এ সাবস্ক্রাইব করে এবং সাবস্ক্রিপশন `push_subscriptions` টেবিলে সেভ করে। নতুন মেসেজ/কল ইনসার্ট হলে Postgres ট্রিগার (`notify_new_message` / `notify_new_call`) `pg_net` দিয়ে Edge Function-কে কল করে, যেটা প্রাপকদের সাবস্ক্রিপশন খুঁজে সরাসরি ব্রাউজার/OS-কে push পাঠায় — এটা অ্যাপ খোলা না থাকলেও কাজ করে, কারণ ব্রাউজারের নিজস্ব push service (FCM/Mozilla push/APNs ওয়েব push ইত্যাদি) এটা ডেলিভার করে, সার্ভিস ওয়ার্কার সেটা রিসিভ করে `sw.js`-এর `push` ইভেন্টে নোটিফিকেশন দেখায়।
+
+> **নোট:** iOS Safari-তে Web Push কাজ করতে হলে অ্যাপটা প্রথমে হোম স্ক্রিনে "Add to Home Screen" দিয়ে ইনস্টল করা থাকতে হবে (iOS 16.4+)। সাধারণ Safari ট্যাবে Web Push সাপোর্ট নেই।
+
+## ৪) Vercel-এ ডিপ্লয়
 
 1. এই প্রজেক্ট একটা GitHub রিপোতে পুশ করুন।
 2. Vercel-এ **New Project** → রিপো ইমপোর্ট করুন। Framework preset: **Vite**।
-3. **Project Settings → Environment Variables** এ এই দুটো (Production + Preview + Development সব এনভায়রনমেন্টে) বসান:
+3. **Project Settings → Environment Variables** এ এগুলো (Production + Preview + Development সব এনভায়রনমেন্টে) বসান:
    ```
    VITE_SUPABASE_URL=https://xxxx.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
+   VITE_VAPID_PUBLIC_KEY=BPeYk9...   (Web Push সেটআপ করলে; ৩নং ধাপ দেখুন)
    ```
    ভিডিও/ভয়েস কল আরও নির্ভরযোগ্য করতে TURN সার্ভার ক্রেডেনশিয়ালও (ঐচ্ছিক, নিচে দেখুন) যোগ করতে পারেন:
    ```
@@ -70,7 +134,7 @@ npm run dev
 
 > **গুরুত্বপূর্ণ:** `VITE_` প্রিফিক্স ছাড়া কোনো এনভায়রনমেন্ট ভ্যারিয়েবল ব্রাউজারে (Vite বিল্ডে) পাবেন না — নাম ঠিক এভাবেই রাখুন।
 
-## ৪) TURN সার্ভার কেন দরকার হতে পারে
+## ৫) TURN সার্ভার কেন দরকার হতে পারে
 
 শুধু STUN (ডিফল্টে যোগ করা আছে) দিয়ে বেশিরভাগ নেটওয়ার্কে কল কানেক্ট হবে, কিন্তু কড়া NAT/ফায়ারওয়ালের পেছনে থাকা ইউজারদের জন্য TURN সার্ভার লাগবে। ফ্রি/প্রোডাকশন অপশন:
 - [metered.ca/stun-turn](https://www.metered.ca/tools/openrelay/) — ফ্রি টিয়ার আছে
@@ -79,14 +143,14 @@ npm run dev
 
 `.env`-এ `VITE_TURN_URL` ইত্যাদি বসালেই `src/lib/calls.js` অটো সেটা ব্যবহার করবে।
 
-## ৫) প্রজেক্ট স্ট্রাকচার
+## ৬) প্রজেক্ট স্ট্রাকচার
 
 ```
 whatschat/
-├── index.html              # অ্যাপ শেল (auth, চ্যাট UI, কল ওভারলে)
+├── index.html              # অ্যাপ শেল (auth, চ্যাট UI, কল ওভারলে, কল হিস্ট্রি প্যানেল)
 ├── public/
 │   ├── manifest.webmanifest
-│   ├── sw.js                # PWA সার্ভিস ওয়ার্কার
+│   ├── sw.js                # PWA সার্ভিস ওয়ার্কার + push/notificationclick হ্যান্ডলার
 │   └── icons/
 ├── src/
 │   ├── style.css            # প্রিমিয়াম ডিজাইন সিস্টেম (টোকেন-বেসড)
@@ -94,26 +158,35 @@ whatschat/
 │   └── lib/
 │       ├── supabase.js       # Supabase ক্লায়েন্ট (env var থেকে)
 │       ├── auth.js           # ইমেইল OTP অথ
-│       ├── chat.js           # চ্যাট/মেসেজ CRUD + রিয়েলটাইম সাবস্ক্রিপশন
-│       ├── calls.js          # WebRTC + Supabase broadcast signaling
+│       ├── chat.js           # চ্যাট/মেসেজ CRUD + রিয়েলটাইম সাবস্ক্রিপশন (রিয়েকশন, রিসিপ্ট, টাইপিং)
+│       ├── calls.js          # WebRTC (mesh গ্রুপ কল সহ) + Supabase broadcast signaling
+│       ├── callLogs.js       # কল হিস্ট্রি CRUD
+│       ├── voiceRecorder.js  # MediaRecorder wrapper (ভয়েস নোট)
+│       ├── push.js           # Web Push সাবস্ক্রিপশন ম্যানেজমেন্ট
+│       ├── sounds.js         # ইন-অ্যাপ রিংটোন/পিং (Web Audio API)
 │       └── pwa.js            # সার্ভিস ওয়ার্কার রেজিস্ট্রেশন
 ├── supabase/
-│   └── schema.sql            # টেবিল, RLS পলিসি, ট্রিগার
+│   ├── schema.sql            # টেবিল, RLS পলিসি, ট্রিগার, pg_net push ট্রিগার
+│   ├── migration_5_premium_features.sql
+│   └── functions/
+│       └── send-push/
+│           └── index.ts      # Web Push পাঠানোর Edge Function (Deno)
 ├── vercel.json                # SPA রিরাইট + সার্ভিস ওয়ার্কার হেডার
 └── .env.example
 ```
 
-## ৬) কীভাবে কলিং কাজ করে
+## ৭) কীভাবে কলিং কাজ করে
 
-কোনো মেসেজ/কল টেবিলে সেভ হয় না — প্রতিটা ইউজারের নিজস্ব Supabase Realtime **broadcast চ্যানেল** (`signal:<user_id>`) আছে। কল করলে অফার/আনসার/ICE candidate সরাসরি পিয়ারের চ্যানেলে পাঠানো হয় (peer-to-peer WebRTC handshake)। এতে:
+কোনো WebRTC handshake ডেটা টেবিলে সেভ হয় না — প্রতিটা ইউজারের নিজস্ব Supabase Realtime **broadcast চ্যানেল** (`signal:<user_id>`) আছে। কল করলে অফার/আনসার/ICE candidate সরাসরি পিয়ারের চ্যানেলে পাঠানো হয় (peer-to-peer WebRTC handshake)। গ্রুপ কলে প্রতিটা অংশগ্রহণকারী একে অপরের সাথে আলাদা peer connection বানায় (mesh টপোলজি)। এতে:
 - কোনো আলাদা signaling সার্ভার লাগে না
 - অডিও/ভিডিও স্ট্রিম সরাসরি ব্রাউজার-টু-ব্রাউজার যায় (Supabase শুধু handshake মেসেজ পাস করে)
-- উভয় ইউজারকে অ্যাপ খোলা/অনলাইন থাকতে হবে (push notification যোগ করে অফলাইন কল-রিং করানো যায়, `sw.js`-এ এর জন্য push handler রেডি করা আছে)
+- দুই পক্ষকেই realtime সাবস্ক্রিপশন সচল থাকতে হয় (অ্যাপ ফোরগ্রাউন্ড বা ব্যাকগ্রাউন্ড ট্যাবে খোলা) — সম্পূর্ণ বন্ধ থাকলে handshake সম্ভব না, তবে Web Push দিয়ে ব্যবহারকারীকে জানানো হবে যে কেউ কল করেছে যাতে সে অ্যাপ খুলে কলব্যাক করতে পারে
+- কল হিস্ট্রি (`call_logs`/`call_participants`) আলাদাভাবে DB-তে সেভ হয়, WebRTC handshake থেকে স্বতন্ত্র
 
-## ৭) পরবর্তী উন্নতির আইডিয়া (ঐচ্ছিক)
+## ৮) পরবর্তী উন্নতির আইডিয়া (ঐচ্ছিক)
 
-- গ্রুপ চ্যাট (schema-তে `is_group` কলাম আগে থেকেই আছে, শুধু UI যোগ করতে হবে)
-- মিডিয়া/ইমেজ শেয়ারিং (Supabase Storage বাকেট)
-- মিসড-কল হিস্ট্রি সেভ করা (একটা `calls` টেবিল যোগ করে)
-- Web Push দিয়ে অফলাইন নোটিফিকেশন (Supabase Edge Function + VAPID key)
-- মেসেজ টাইপিং ইন্ডিকেটর (Supabase Presence API)
+- মেসেজে একাধিক ফাইল/মাল্টি-ইমেজ অ্যাটাচমেন্ট
+- গ্রুপ চ্যাট তৈরির UI (schema ও `createGroupChat()` হেল্পার আগে থেকেই আছে, ব্যবহারকারীর জন্য গ্রুপ-তৈরি মোডাল যোগ করা বাকি)
+- এন্ড-টু-এন্ড এনক্রিপশন (বর্তমানে Supabase RLS দিয়ে অ্যাক্সেস কন্ট্রোল করা হয়, কিন্তু মেসেজ সার্ভারে প্লেইনটেক্সট থাকে)
+- মেসেজ সার্চ
+- কল রেকর্ডিং
