@@ -102,6 +102,38 @@ input { font-family: inherit; }
 .btn-primary:hover { box-shadow: 0 6px 20px rgba(31,158,124,0.35); transform: translateY(-1px); }
 .auth-msg { min-height: 18px; font-size: 13px; color: var(--gold); text-align: center; }
 
+.btn-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-weight: 600;
+  font-size: 15px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-google:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.25); transform: translateY(-1px); }
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0;
+  color: var(--text-mute);
+  font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
 /* ---------------- Main shell ---------------- */
 #main-screen { display: grid; grid-template-columns: 360px 1fr; height: 100%; }
 .sidebar {

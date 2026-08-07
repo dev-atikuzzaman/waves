@@ -1,5 +1,5 @@
 import { supabase } from './lib/supabase.js';
-import { sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus } from './lib/auth.js';
+import { signInWithGoogle, sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus } from './lib/auth.js';
 import {
   searchProfiles,
   loadMyChats,
@@ -52,6 +52,7 @@ if ('serviceWorker' in navigator) {
 const $ = (id) => document.getElementById(id);
 const authScreen = $('auth-screen');
 const mainScreen = $('main-screen');
+const googleSigninBtn = $('google-signin-btn');
 const authForm = $('auth-form');
 const authEmail = $('auth-email');
 const authOtp = $('auth-otp');
@@ -161,6 +162,18 @@ function toast(text) {
 }
 
 // ---------- Auth flow ----------
+googleSigninBtn.addEventListener('click', async () => {
+  googleSigninBtn.disabled = true;
+  try {
+    // Google-এর কনসেন্ট পেজে রিডাইরেক্ট করে — সফল হলে Google নিজেই আবার এই পেজে ফিরিয়ে
+    // আনে এবং onAuthChange স্বয়ংক্রিয়ভাবে লগইন সম্পন্ন করে
+    await signInWithGoogle();
+  } catch (err) {
+    authMsg.textContent = err.message || 'Google সাইন-ইন করা যায়নি';
+    googleSigninBtn.disabled = false;
+  }
+});
+
 authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   authSubmit.disabled = true;
