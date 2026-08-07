@@ -374,14 +374,29 @@ create trigger trg_touch_chat
 --   ১) <PROJECT_REF> কে আপনার Supabase প্রজেক্ট রেফ দিয়ে বদলান
 --   ২) <WEBHOOK_SECRET> কে আপনার supabase secrets set WEBHOOK_SECRET=... এ
 --      যেটা বসিয়েছেন ঠিক সেটা দিয়ে বদলান
+--
+-- 🔴 সিকিউরিটি সতর্কতা: আপনার আগের schema.sql-এ এই দুই প্লেসহোল্ডারের জায়গায়
+-- আসল প্রজেক্ট রেফ এবং আসল WEBHOOK_SECRET হার্ডকোড করা অবস্থায় ছিল, এবং ফাইলটা
+-- মনে হচ্ছে GitHub রিপোতে কমিট করা হয়েছে। এর মানে ওই সিক্রেটটা এখন এক্সপোজড
+-- ধরে নিতে হবে। এই ফাইল আবার রান করার আগে:
+--   ১) নতুন সিক্রেট বানান:  openssl rand -hex 32
+--   ২) সেটা Edge Function-এ আপডেট করুন:  supabase secrets set WEBHOOK_SECRET=<নতুন-মান>
+--   ৩) supabase functions deploy send-push --no-verify-jwt (আবার ডিপ্লয় করুন)
+--   ৪) নিচের <WEBHOOK_SECRET> প্লেসহোল্ডারে ওই *নতুন* মান বসান (পুরনোটা না)
+-- এবং ভবিষ্যতে .gitignore-এ রিয়েল সিক্রেটসহ ফাইল যোগ করা এড়াতে, schema.sql-এর
+-- কপি রিপোতে সবসময় প্লেসহোল্ডার আকারেই রাখুন — লোকাল/প্রোডাকশনে রান করার সময়
+-- শুধু SQL Editor-এ সাময়িকভাবে মান বসিয়ে রান করুন, ফাইলে সেভ করে কমিট করবেন না।
 -- =====================================================================
 create extension if not exists pg_net with schema extensions;
 
 create or replace function public.notify_new_message()
 returns trigger as $$
 declare
-  fn_url text := 'https:muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
-  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
+  -- ⚠️ বাগ ফিক্স: আগে এখানে 'https:' এর পরে '//' মিসিং ছিল (https:muirh...) —
+  -- এটা একটা অবৈধ URL, তাই pg_net এর প্রতিটা কল নীরবে ব্যর্থ হচ্ছিল এবং
+  -- টেক্সট মেসেজের পুশ নোটিফিকেশন কখনোই যাচ্ছিল না (কোনো এরর ছাড়াই)।
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
   if fn_url like '%<PROJECT_REF>%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
