@@ -93,14 +93,18 @@ supabase functions deploy send-push --no-verify-jwt
 ```
 `--no-verify-jwt` দরকার কারণ Postgres ট্রিগার থেকে কল হবে, ইউজার সেশন থেকে না — এর বদলে `WEBHOOK_SECRET` হেডার দিয়ে যাচাই করা হয় (দেখুন `supabase/functions/send-push/index.ts`)।
 
-### ৩.৫ Postgres ট্রিগারকে Edge Function URL জানান
+### ৩.৫ Postgres ট্রিগারে Edge Function URL ও secret বসান
 
-SQL Editor-এ রান করুন (আপনার প্রজেক্ট রেফ ও ৩.৩-এর `WEBHOOK_SECRET` বসিয়ে):
+`supabase/schema.sql` ফাইলের **STEP 4** অংশে (`notify_new_message` ও `notify_new_call` ফাংশনের ভেতরে) দুই জায়গায় প্লেসহোল্ডার আছে:
 ```sql
-alter database postgres set app.settings.edge_function_url = 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-alter database postgres set app.settings.edge_function_secret = '<WEBHOOK_SECRET>';
+fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+fn_secret text := '<WEBHOOK_SECRET>';
 ```
-এটা রান না করলে trigger চুপচাপ push পাঠানো স্কিপ করবে (মেসেজ/কল পাঠাতে ব্যর্থ হবে না, শুধু নোটিফিকেশন যাবে না)।
+`<PROJECT_REF>` কে আপনার Supabase প্রজেক্ট রেফ দিয়ে এবং `<WEBHOOK_SECRET>` কে ৩.৩-এ সেট করা মানটা দিয়ে বদলে **দুইটা ফাংশনেই** (মেসেজ ও কল, দুই জায়গায়) রিপ্লেস করুন, তারপর পুরো `schema.sql` আবার SQL Editor-এ রান করুন।
+
+> **⚠️ কেন হার্ডকোড করা, `alter database ... set app.settings.x` কেন নয়?** আগের ভার্সনে `current_setting('app.settings.x')` দিয়ে করা হতো, কিন্তু Supabase-এর pooled connection-এ session-level GUC অনির্ভরযোগ্যভাবে propagate হয় — ফলে ট্রিগার প্রায়ই নীরবে স্কিপ হয়ে যেত (কোনো এরর ছাড়াই, মেসেজ/কল ঠিকই কাজ করত কিন্তু পুশ কখনো পাঠানো হতো না)। ফাংশনের ভেতরে সরাসরি বসানো নির্ভরযোগ্য, এবং যেহেতু ফাংশনটা `security definer` ও শুধু ট্রিগার থেকেই কল হয় (ক্লায়েন্ট থেকে সরাসরি না), এটা নিরাপদ।
+
+এটা সঠিকভাবে না বসালে trigger চুপচাপ push পাঠানো স্কিপ করবে (মেসেজ/কল পাঠাতে ব্যর্থ হবে না, শুধু নোটিফিকেশন যাবে না)।
 
 ### ৩.৬ Frontend-এ VAPID public key বসান
 
@@ -110,9 +114,18 @@ VITE_VAPID_PUBLIC_KEY=<৩.১ থেকে পাওয়া public key — �
 ```
 
 ### কীভাবে কাজ করে
-লগইনের পর অ্যাপ ব্রাউজার নোটিফিকেশন পারমিশন চায়। অনুমতি দিলে `push.js` ব্রাউজারের PushManager-এ সাবস্ক্রাইব করে এবং সাবস্ক্রিপশন `push_subscriptions` টেবিলে সেভ করে। নতুন মেসেজ/কল ইনসার্ট হলে Postgres ট্রিগার (`notify_new_message` / `notify_new_call`) `pg_net` দিয়ে Edge Function-কে কল করে, যেটা প্রাপকদের সাবস্ক্রিপশন খুঁজে সরাসরি ব্রাউজার/OS-কে push পাঠায় — এটা অ্যাপ খোলা না থাকলেও কাজ করে, কারণ ব্রাউজারের নিজস্ব push service (FCM/Mozilla push/APNs ওয়েব push ইত্যাদি) এটা ডেলিভার করে, সার্ভিস ওয়ার্কার সেটা রিসিভ করে `sw.js`-এর `push` ইভেন্টে নোটিফিকেশন দেখায়।
+লগইনের পর অ্যাপ ব্রাউজার নোটিফিকেশন পারমিশন চায়। অনুমতি দিলে `push.js` ব্রাউজারের PushManager-এ সাবস্ক্রাইব করে এবং সাবস্ক্রিপশন `push_subscriptions` টেবিলে সেভ করে। নতুন মেসেজ ইনসার্ট হলে `notify_new_message` ট্রিগার এবং কোনো নতুন কল-পার্টিসিপেন্ট যোগ হলে `notify_new_call` ট্রিগার `pg_net` দিয়ে Edge Function-কে কল করে, যেটা প্রাপকের সাবস্ক্রিপশন খুঁজে সরাসরি ব্রাউজার/OS-কে push পাঠায় — এটা অ্যাপ খোলা না থাকলেও কাজ করে, কারণ ব্রাউজারের নিজস্ব push service (FCM/Mozilla push/APNs ওয়েব push ইত্যাদি) এটা ডেলিভার করে, সার্ভিস ওয়ার্কার সেটা রিসিভ করে `sw.js`-এর `push` ইভেন্টে নোটিফিকেশন দেখায়।
+
+> **নোট:** কল-নোটিফিকেশনের ট্রিগার ইচ্ছাকৃতভাবে `call_logs`-এর বদলে `call_participants`-এর insert-এ বসানো — কারণ ক্লায়েন্ট আগে `call_logs` রো বানায়, তারপর আলাদা কলে `call_participants` রো যোগ করে। `call_logs`-এ ট্রিগার রাখলে তখনো কোনো participant ডাটাবেসে না থাকায় Edge Function সবসময় শূন্য প্রাপক পেত।
 
 > **নোট:** iOS Safari-তে Web Push কাজ করতে হলে অ্যাপটা প্রথমে হোম স্ক্রিনে "Add to Home Screen" দিয়ে ইনস্টল করা থাকতে হবে (iOS 16.4+)। সাধারণ Safari ট্যাবে Web Push সাপোর্ট নেই।
+
+### ৩.৭ সমস্যা হলে যেভাবে ডিবাগ করবেন
+
+1. **Supabase Dashboard → Edge Functions → send-push → Logs** দেখুন — মেসেজ পাঠানো বা কল করার পরপরই এখানে লগ আসা উচিত (`[send-push] type=... sent=...`)। কিছুই না এলে মানে ট্রিগার Edge Function পর্যন্ত পৌঁছাচ্ছে না (ধাপ ৩.৫ আবার চেক করুন — placeholder ঠিকভাবে বদলানো হয়েছে কিনা)।
+2. Edge Function লগে `no recipients resolved` বা `no push_subscriptions rows found` দেখলে — প্রাপকের ব্রাউজারে নোটিফিকেশন পারমিশন `granted` কিনা এবং `push_subscriptions` টেবিলে তার রো আছে কিনা চেক করুন (SQL Editor-এ `select * from push_subscriptions;`)।
+3. লগে `sent=1/1` দেখলেও ফোনে নোটিফিকেশন না এলে — এটা ডিভাইস/OS-লেভেল সমস্যা: Android-এ অ্যাপের নোটিফিকেশন পারমিশন সিস্টেম সেটিংসে অন আছে কিনা, ব্যাটারি অপ্টিমাইজেশন/Doze mode অ্যাপটাকে push wake-up করতে বাধা দিচ্ছে কিনা (Chrome/PWA-কে "Unrestricted" ব্যাটারি ব্যবহারে রাখুন) দেখুন।
+4. `pg_net`-এর HTTP রেসপন্স নিজেই চেক করতে চাইলে SQL Editor-এ: `select * from net._http_response order by created desc limit 5;`
 
 ## ৪) Vercel-এ ডিপ্লয়
 
