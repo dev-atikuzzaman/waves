@@ -91,6 +91,17 @@ create table if not exists public.call_participants (
   primary key (call_id, user_id)
 );
 
+-- Web Push সাবস্ক্রিপশন — অ্যাপ বন্ধ/ব্যাকগ্রাউন্ডে থাকলেও কল/মেসেজ নোটিফিকেশন পাঠানোর জন্য।
+-- এক ইউজারের একাধিক ডিভাইস/ব্রাউজার থাকতে পারে, তাই endpoint-ভিত্তিক আলাদা রো।
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
 -- ---------- STEP 2: RLS চালু করুন ----------
 alter table public.profiles enable row level security;
 alter table public.chats enable row level security;
@@ -100,6 +111,7 @@ alter table public.message_receipts enable row level security;
 alter table public.message_reactions enable row level security;
 alter table public.call_logs enable row level security;
 alter table public.call_participants enable row level security;
+alter table public.push_subscriptions enable row level security;
 
 -- ---------- STEP 2.5: হেল্পার ফাংশন ----------
 -- chat_members-এর নিজের উপর RLS পলিসি সরাসরি chat_members কোয়েরি করলে
@@ -280,6 +292,22 @@ create policy "participants can update their own participant row"
   on public.call_participants for update
   using (user_id = auth.uid());
 
+-- push_subscriptions: প্রত্যেকে শুধু নিজের সাবস্ক্রিপশন ম্যানেজ করতে পারবে
+drop policy if exists "users can read their own push subscriptions" on public.push_subscriptions;
+create policy "users can read their own push subscriptions"
+  on public.push_subscriptions for select
+  using (user_id = auth.uid());
+
+drop policy if exists "users can add their own push subscriptions" on public.push_subscriptions;
+create policy "users can add their own push subscriptions"
+  on public.push_subscriptions for insert
+  with check (user_id = auth.uid());
+
+drop policy if exists "users can delete their own push subscriptions" on public.push_subscriptions;
+create policy "users can delete their own push subscriptions"
+  on public.push_subscriptions for delete
+  using (user_id = auth.uid());
+
 -- ---------- realtime ----------
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.profiles;
@@ -320,3 +348,75 @@ drop trigger if exists trg_touch_chat on public.messages;
 create trigger trg_touch_chat
   after insert on public.messages
   for each row execute function public.touch_chat_updated_at();
+
+-- =====================================================================
+-- STEP 4: Web Push ট্রিগার — নতুন মেসেজ/কল হলে Edge Function কল করে
+-- push_subscriptions-এ থাকা ডিভাইসগুলোতে নোটিফিকেশন পাঠানো হয়।
+-- এর জন্য pg_net এক্সটেনশন লাগবে (Supabase-এ ডিফল্ট এনাবল করা থাকে)।
+-- =====================================================================
+create extension if not exists pg_net with schema extensions;
+
+-- এই সেটিংস দুটো Supabase Dashboard > Project Settings > Database > Custom Config এ,
+-- অথবা নিচের ALTER DATABASE কমান্ড রান করে সেট করুন (আপনার প্রজেক্টের রেফ ও ফাংশন
+-- সিক্রেট বসিয়ে):
+--   alter database postgres set app.settings.edge_function_url = 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+--   alter database postgres set app.settings.edge_function_secret = '<আপনার নিজের গোপন সিক্রেট>';
+-- (README-এর "Web Push সেটআপ" অংশে বিস্তারিত ধাপ আছে)
+
+create or replace function public.notify_new_message()
+returns trigger as $$
+declare
+  fn_url text;
+  fn_secret text;
+begin
+  fn_url := current_setting('app.settings.edge_function_url', true);
+  fn_secret := current_setting('app.settings.edge_function_secret', true);
+  if fn_url is null then
+    return new; -- Edge Function সেটআপ করা না থাকলে চুপচাপ স্কিপ করুন, ইনসার্ট ব্যর্থ হবে না
+  end if;
+
+  perform net.http_post(
+    url := fn_url,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', coalesce(fn_secret, '')),
+    body := jsonb_build_object(
+      'type', 'message',
+      'record', to_jsonb(new)
+    )
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_notify_new_message on public.messages;
+create trigger trg_notify_new_message
+  after insert on public.messages
+  for each row execute function public.notify_new_message();
+
+create or replace function public.notify_new_call()
+returns trigger as $$
+declare
+  fn_url text;
+  fn_secret text;
+begin
+  fn_url := current_setting('app.settings.edge_function_url', true);
+  fn_secret := current_setting('app.settings.edge_function_secret', true);
+  if fn_url is null then
+    return new;
+  end if;
+
+  perform net.http_post(
+    url := fn_url,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-webhook-secret', coalesce(fn_secret, '')),
+    body := jsonb_build_object(
+      'type', 'call',
+      'record', to_jsonb(new)
+    )
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_notify_new_call on public.call_logs;
+create trigger trg_notify_new_call
+  after insert on public.call_logs
+  for each row execute function public.notify_new_call();
