@@ -26,6 +26,7 @@ import { VoiceRecorder } from './lib/voiceRecorder.js';
 import { registerServiceWorker } from './lib/pwa.js';
 import { enablePushNotifications, disablePushNotifications, getNotificationPermission } from './lib/push.js';
 import { playMessagePing, startRingtone, stopRingtone, startOutgoingRingback, unlockAudioOnFirstInteraction } from './lib/sounds.js';
+import { EMOJI_CATEGORIES } from './lib/emojiData.js';
 
 registerServiceWorker();
 unlockAudioOnFirstInteraction();
@@ -81,6 +82,11 @@ const videoCallBtn = $('video-call-btn');
 const attachBtn = $('attach-btn');
 const fileInput = $('file-input');
 const micRecordBtn = $('mic-record-btn');
+const emojiBtn = $('emoji-btn');
+const emojiPicker = $('emoji-picker');
+const emojiSearch = $('emoji-search');
+const emojiTabs = $('emoji-tabs');
+const emojiGrid = $('emoji-grid');
 const recordingBar = $('recording-bar');
 const recordingTime = $('recording-time');
 const recordingCancelBtn = $('recording-cancel-btn');
@@ -351,6 +357,7 @@ async function openChat(chatId, peer, chatMeta = null) {
   activeChatMembers = chatMeta?.members || (peer ? [peer] : []);
   clearReply();
   clearEditing();
+  emojiPicker.classList.add('hidden');
 
   emptyState.classList.add('hidden');
   activeChat.classList.remove('hidden');
@@ -473,8 +480,13 @@ function buildBubble(msg) {
   const outer = document.createElement('div');
   outer.style.position = 'relative';
 
+  const isJumbo = !msg.deleted_at && msg.kind === 'text' && isEmojiOnlyMessage(msg.body);
   const bubble = document.createElement('div');
-  bubble.className = 'bubble ' + (msg.sender_id === currentUser.id ? 'mine' : 'theirs') + (msg.deleted_at ? ' deleted' : '');
+  bubble.className =
+    'bubble ' +
+    (msg.sender_id === currentUser.id ? 'mine' : 'theirs') +
+    (msg.deleted_at ? ' deleted' : '') +
+    (isJumbo ? ' jumbo-emoji' : '');
 
   let innerHtml = '';
 
@@ -610,6 +622,18 @@ function senderLabelFor(userId) {
   return m?.display_name;
 }
 
+/** মেসেজে শুধুমাত্র ইমোজি (সর্বোচ্চ ৬টা) থাকলে true — WhatsApp-স্টাইল "jumbomoji" বাবলের জন্য ব্যবহৃত */
+const EMOJI_ONLY_RE = /^[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D\s]+$/u;
+function isEmojiOnlyMessage(body = '') {
+  const trimmed = body.trim();
+  if (!trimmed || !EMOJI_ONLY_RE.test(trimmed)) return false;
+  const graphemeCount =
+    typeof Intl !== 'undefined' && Intl.Segmenter
+      ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)].length
+      : [...trimmed].length;
+  return graphemeCount > 0 && graphemeCount <= 6;
+}
+
 function truncate(str = '', n) {
   return str.length > n ? str.slice(0, n) + '…' : str;
 }
@@ -688,6 +712,7 @@ composer.addEventListener('submit', async (e) => {
   const body = messageInput.value.trim();
   if (!body || !activeChatId) return;
   messageInput.value = '';
+  emojiPicker.classList.add('hidden');
   sendTyping(typingChannel, currentUser.id, false);
 
   try {
@@ -710,8 +735,121 @@ messageInput.addEventListener('input', () => {
   typingTimeout = setTimeout(() => sendTyping(typingChannel, currentUser.id, false), 2000);
 });
 
+// ---------- Emoji picker (প্রিমিয়াম টেক্সট চ্যাট ফিচার) ----------
+const RECENT_EMOJI_KEY = 'waves:recent-emojis';
+const RECENT_EMOJI_LIMIT = 24;
+
+function loadRecentEmojis() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_EMOJI_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentEmoji(emoji) {
+  const recents = loadRecentEmojis().filter((e) => e !== emoji);
+  recents.unshift(emoji);
+  try {
+    localStorage.setItem(RECENT_EMOJI_KEY, JSON.stringify(recents.slice(0, RECENT_EMOJI_LIMIT)));
+  } catch {
+    // localStorage না থাকলে (প্রাইভেট মোড ইত্যাদি) নীরবে উপেক্ষা — শুধু "সাম্প্রতিক" ফিচারটা কাজ করবে না
+  }
+}
+
+let activeEmojiTab = 'recent';
+
+function renderEmojiTabs() {
+  emojiTabs.innerHTML = '';
+  const tabs = [{ id: 'recent', icon: '🕑', label: 'সাম্প্রতিক' }, ...EMOJI_CATEGORIES.map((c) => ({ id: c.id, icon: c.icon, label: c.label }))];
+  for (const tab of tabs) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-tab' + (tab.id === activeEmojiTab ? ' active' : '');
+    btn.textContent = tab.icon;
+    btn.title = tab.label;
+    btn.addEventListener('click', () => {
+      activeEmojiTab = tab.id;
+      emojiSearch.value = '';
+      renderEmojiTabs();
+      renderEmojiGrid();
+    });
+    emojiTabs.appendChild(btn);
+  }
+}
+
+function renderEmojiGrid() {
+  const query = emojiSearch.value.trim();
+  emojiGrid.innerHTML = '';
+
+  let list;
+  if (query) {
+    // সাধারণ ইমোজি সার্চ — আমাদের কিউরেটেড ক্যাটেগরি লেবেলের সাথে মিলিয়ে দেখানো হয়
+    const q = query.toLowerCase();
+    const matchedCategories = EMOJI_CATEGORIES.filter((c) => c.label.toLowerCase().includes(q));
+    list = matchedCategories.length ? matchedCategories.flatMap((c) => c.emojis) : [];
+    if (!list.length) {
+      emojiGrid.innerHTML = `<div class="emoji-grid-empty">কিছু পাওয়া যায়নি — ক্যাটেগরির নাম দিয়ে খুঁজুন (যেমন "মুখাবয়ব")</div>`;
+      return;
+    }
+  } else if (activeEmojiTab === 'recent') {
+    list = loadRecentEmojis();
+    if (!list.length) {
+      emojiGrid.innerHTML = `<div class="emoji-grid-empty">এখনো কোনো ইমোজি ব্যবহার করেননি</div>`;
+      return;
+    }
+  } else {
+    list = EMOJI_CATEGORIES.find((c) => c.id === activeEmojiTab)?.emojis || [];
+  }
+
+  for (const emoji of list) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-grid-cell';
+    btn.textContent = emoji;
+    btn.addEventListener('click', () => insertEmoji(emoji));
+    emojiGrid.appendChild(btn);
+  }
+}
+
+function insertEmoji(emoji) {
+  const el = messageInput;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  el.value = el.value.slice(0, start) + emoji + el.value.slice(end);
+  const caret = start + emoji.length;
+  el.focus();
+  el.setSelectionRange(caret, caret);
+  saveRecentEmoji(emoji);
+  if (typingChannel) sendTyping(typingChannel, currentUser.id, true);
+}
+
+emojiBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const willOpen = emojiPicker.classList.contains('hidden');
+  emojiPicker.classList.toggle('hidden');
+  if (willOpen) {
+    renderEmojiTabs();
+    renderEmojiGrid();
+    emojiSearch.value = '';
+  }
+});
+
+emojiSearch.addEventListener('input', renderEmojiGrid);
+
+emojiPicker.addEventListener('click', (e) => e.stopPropagation());
+
+document.addEventListener('click', () => emojiPicker.classList.add('hidden'));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') emojiPicker.classList.add('hidden');
+});
+
 // ---------- File / image attachment ----------
-attachBtn.addEventListener('click', () => fileInput.click());
+attachBtn.addEventListener('click', () => {
+  emojiPicker.classList.add('hidden');
+  fileInput.click();
+});
 
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files[0];
@@ -728,6 +866,7 @@ fileInput.addEventListener('change', async () => {
 
 // ---------- Voice notes ----------
 micRecordBtn.addEventListener('click', async () => {
+  emojiPicker.classList.add('hidden');
   try {
     voiceRecorder = new VoiceRecorder();
     await voiceRecorder.start();
