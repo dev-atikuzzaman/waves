@@ -17,14 +17,35 @@ import {
   subscribeToReceipts,
   subscribeToTyping,
   sendTyping,
-  subscribeToPresence
+  subscribeToPresence,
+  subscribeToAllMyMessages
 } from './lib/chat.js';
 import { CallManager } from './lib/calls.js';
 import { loadCallHistory } from './lib/callLogs.js';
 import { VoiceRecorder } from './lib/voiceRecorder.js';
 import { registerServiceWorker } from './lib/pwa.js';
+import { enablePushNotifications, disablePushNotifications, getNotificationPermission } from './lib/push.js';
+import { playMessagePing, startRingtone, stopRingtone, startOutgoingRingback, unlockAudioOnFirstInteraction } from './lib/sounds.js';
 
 registerServiceWorker();
+unlockAudioOnFirstInteraction();
+
+// নোটিফিকেশনে ট্যাপ করলে service worker postMessage পাঠায় — সঠিক চ্যাট খুলে দিন
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', async (event) => {
+    const data = event.data || {};
+    if (data.type !== 'notification-click' || !currentUser) return;
+    if (data.chatId) {
+      try {
+        const chats = await loadMyChats(currentUser.id);
+        const chat = chats.find((c) => c.id === data.chatId);
+        if (chat) await openChat(chat.id, chat.peer, chat);
+      } catch {
+        // চ্যাট খুলতে ব্যর্থ হলে অন্তত অ্যাপ ফোকাসে থাকবে
+      }
+    }
+  });
+}
 
 // ---------- DOM refs ----------
 const $ = (id) => document.getElementById(id);
@@ -122,6 +143,8 @@ let editingMessageId = null;
 let voiceRecorder = null;
 let recordingInterval = null;
 let openReactionPickerFor = null;
+let unsubAllMessages = null;
+let myChatIds = [];
 
 function toast(text) {
   const el = document.createElement('div');
@@ -155,7 +178,10 @@ authForm.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-  if (currentUser) await setOnlineStatus(currentUser.id, false);
+  if (currentUser) {
+    await setOnlineStatus(currentUser.id, false);
+    await disablePushNotifications().catch(() => {});
+  }
   await signOut();
 });
 
@@ -167,12 +193,33 @@ onAuthChange(async (session) => {
     showMain();
     initCallManager();
     await refreshChatList();
+    maybePromptForNotifications();
   } else {
     currentUser = null;
     currentProfile = null;
     showAuth();
   }
 });
+
+/** লগইনের পর, ব্রাউজার সাপোর্ট করলে এবং আগে জিজ্ঞেস করা না থাকলে নোটিফিকেশন পারমিশন চান।
+ *  এটাই "অ্যাপ ব্যাকগ্রাউন্ডে/বন্ধ থাকলে কল পপ-আপ না আসা" সমস্যার মূল সমাধান — অনুমতি
+ *  ছাড়া ব্রাউজার কখনোই ব্যাকগ্রাউন্ডে নোটিফিকেশন দেখাতে পারবে না। */
+async function maybePromptForNotifications() {
+  const permission = getNotificationPermission();
+  if (permission === 'unsupported' || permission === 'denied') return;
+  if (permission === 'granted') {
+    // ইতিমধ্যে অনুমতি আছে — সাবস্ক্রিপশন আপ-টু-ডেট আছে কিনা নিশ্চিত করুন (নীরবে, টোস্ট ছাড়া)
+    await enablePushNotifications(currentUser.id).catch(() => {});
+    return;
+  }
+  // এখনো জিজ্ঞেস করা হয়নি — একটা টোস্টের বদলে সরাসরি ব্রাউজার প্রম্পট দেখান
+  const result = await enablePushNotifications(currentUser.id).catch(() => null);
+  if (result?.granted) {
+    toast('নোটিফিকেশন চালু হয়েছে — এখন থেকে অ্যাপ বন্ধ থাকলেও কল/মেসেজের নোটিফিকেশন পাবেন');
+  } else if (result?.supported && !result.granted) {
+    toast('নোটিফিকেশন অনুমতি ছাড়া অ্যাপ বন্ধ থাকলে কল/মেসেজের পপ-আপ আসবে না');
+  }
+}
 
 (async () => {
   const session = await getSession();
@@ -235,6 +282,8 @@ function renderSearchResults(results) {
 // ---------- Chat list ----------
 async function refreshChatList() {
   const chats = await loadMyChats(currentUser.id);
+  myChatIds = chats.map((c) => c.id);
+  ensureGlobalMessageSubscription();
   chatListEl.innerHTML = '';
   if (!chats.length) {
     chatListEl.innerHTML = `<li class="empty-state" style="padding:24px;">উপরে সার্চ করে কারও সাথে চ্যাট শুরু করুন</li>`;
@@ -281,6 +330,20 @@ async function refreshChatList() {
   }
 }
 
+/** আমার সব চ্যাটের নতুন মেসেজে সাবস্ক্রাইব করে রাখুন (ট্যাব খোলা থাকলে) — যাতে বর্তমানে
+ *  খোলা নেই এমন চ্যাটে মেসেজ এলেও সাউন্ড/টোস্ট দিয়ে জানানো যায়। "অ্যাপের ভিতরে থাকলে
+ *  নোটিফিকেশন সাউন্ড না আসা" সমস্যার একটা অংশ এটা দিয়ে সমাধান হয়; ট্যাব সম্পূর্ণ
+ *  ব্যাকগ্রাউন্ডে/বন্ধ থাকলে সেটা Web Push (push.js) দিয়ে হ্যান্ডল হয়। */
+function ensureGlobalMessageSubscription() {
+  unsubAllMessages?.();
+  unsubAllMessages = subscribeToAllMyMessages(myChatIds, (msg) => {
+    if (msg.sender_id === currentUser.id) return;
+    if (msg.chat_id === activeChatId) return; // এই চ্যাটের জন্য onInsert ইতিমধ্যে পিং বাজায়
+    playMessagePing();
+    refreshChatList();
+  });
+}
+
 // ---------- Active chat ----------
 async function openChat(chatId, peer, chatMeta = null) {
   activeChatId = chatId;
@@ -314,7 +377,10 @@ async function openChat(chatId, peer, chatMeta = null) {
     onInsert: (msg) => {
       appendMessage(msg);
       refreshChatList();
-      if (msg.sender_id !== currentUser.id) markSeen([msg.id], currentUser.id);
+      if (msg.sender_id !== currentUser.id) {
+        markSeen([msg.id], currentUser.id);
+        playMessagePing();
+      }
     },
     onUpdate: (msg) => {
       updateMessageInPlace(msg);
@@ -737,10 +803,12 @@ function handleIncomingCall({ from, video, group }) {
   incomingType.textContent = (group ? 'গ্রুপ ' : '') + (video ? 'ভিডিও কল আসছে' : 'ভয়েস কল আসছে');
   incomingAvatar.src = peerLabel.avatar_url;
   incomingCallEl.classList.remove('hidden');
+  startRingtone();
 }
 
 acceptCallBtn.addEventListener('click', async () => {
   incomingCallEl.classList.add('hidden');
+  stopRingtone();
   openCallOverlay(incomingIsVideo, activePeer || { display_name: incomingName.textContent, avatar_url: incomingAvatar.src });
   try {
     const localStream = await callManager.acceptCall();
@@ -754,6 +822,7 @@ acceptCallBtn.addEventListener('click', async () => {
 
 declineCallBtn.addEventListener('click', () => {
   incomingCallEl.classList.add('hidden');
+  stopRingtone();
   callManager.declineCall();
 });
 
@@ -765,11 +834,13 @@ async function startOutgoingCall(video) {
   const targetIds = activeChatMembers.filter((m) => m.id !== currentUser.id).map((m) => m.id);
   if (!targetIds.length) return;
   openCallOverlay(video, activePeer || { display_name: peerName.textContent, avatar_url: peerAvatar.src });
+  startOutgoingRingback();
   try {
     const localStream = await callManager.startCall(targetIds, video, { chatId: activeChatId });
     localVideo.srcObject = localStream;
     applySpeakerPreference();
   } catch (err) {
+    stopRingtone();
     toast('কল শুরু করা যায়নি: ' + err.message);
     closeCallOverlay();
   }
@@ -798,6 +869,7 @@ function openCallOverlay(video, peer) {
 }
 
 function closeCallOverlay() {
+  stopRingtone();
   callOverlay.classList.add('hidden');
   remoteVideo.srcObject = null;
   localVideo.srcObject = null;
@@ -808,7 +880,10 @@ function closeCallOverlay() {
 function handleCallStateChange(state) {
   if (state === 'ringing') callStatus.textContent = 'রিং হচ্ছে...';
   if (state === 'connecting') callStatus.textContent = 'সংযুক্ত হচ্ছে...';
-  if (state === 'connected') callStatus.textContent = 'সংযুক্ত';
+  if (state === 'connected') {
+    callStatus.textContent = 'সংযুক্ত';
+    stopRingtone();
+  }
   if (state === 'ended') {
     toast('কল শেষ হয়েছে');
     closeCallOverlay();
@@ -883,13 +958,21 @@ async function applySpeakerPreference() {
   }
 }
 
-/** ব্যাক/ফ্রন্ট ক্যামেরা সুইচ — আগে এই বাটনই ছিল না এবং ভিডিও facingMode হার্ডকোড ছিল, তাই ব্যাক ক্যামেরায় সুইচ করলে ব্ল্যাক স্ক্রিন হতো। */
+/** ব্যাক/ফ্রন্ট ক্যামেরা সুইচ — আগে এই বাটনই ছিল না এবং ভিডিও facingMode হার্ডকোড ছিল, তাই ব্যাক ক্যামেরায় সুইচ করলে ব্ল্যাক স্ক্রিন হতো। এখন পুরনো ট্র্যাক আগে বন্ধ করে তারপর নতুন ক্যামেরা রিকোয়েস্ট করা হয়, যা বেশিরভাগ অ্যান্ড্রয়েড ডিভাইসের হার্ডওয়্যার লক সমস্যা এড়ায়। */
+let switchingCamera = false;
 switchCamBtn.addEventListener('click', async () => {
+  if (switchingCamera) return;
+  switchingCamera = true;
+  switchCamBtn.disabled = true;
   try {
     const newStream = await callManager.switchCamera();
     if (newStream) localVideo.srcObject = newStream;
   } catch (err) {
-    toast('ক্যামেরা পাল্টানো যায়নি: এই ডিভাইসে সম্ভবত একাধিক ক্যামেরা নেই');
+    console.warn('switchCamera failed', err);
+    toast('ক্যামেরা পাল্টানো যায়নি — এই ডিভাইসে দ্বিতীয় ক্যামেরা নাও থাকতে পারে, অথবা ব্রাউজারকে ক্যামেরা পারমিশন দিন');
+  } finally {
+    switchingCamera = false;
+    switchCamBtn.disabled = false;
   }
 });
 
