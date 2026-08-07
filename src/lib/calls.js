@@ -356,34 +356,95 @@ export class CallManager {
     }
   }
 
-  /** ফ্রন্ট/ব্যাক ক্যামেরা সুইচ করুন। আগে facingMode 'user'-এ হার্ডকোড ছিল বলে ব্যাক ক্যামেরায় সুইচ করার কোনো উপায়ই ছিল না — সেই না-থাকা ফিচারটাই ব্ল্যাক স্ক্রিন হিসেবে দেখা যাচ্ছিল। */
+  /** ফ্রন্ট/ব্যাক ক্যামেরা সুইচ করুন।
+   *  আগের বাগ: পুরনো ক্যামেরা ট্র্যাক বন্ধ না করেই নতুন getUserMedia কল করা হতো —
+   *  অনেক অ্যান্ড্রয়েড ডিভাইসে (বিশেষ করে multi-lens ব্যাক ক্যামেরাযুক্ত ফোনে) একই সাথে
+   *  দুইটা ক্যামেরা স্ট্রিম চালু রাখতে গেলে দ্বিতীয়টা কালো/ফ্রিজ হয়ে যায় অথবা
+   *  OverconstrainedError দেয়। তাই এখন: (১) আগে পুরনো ট্র্যাক থামানো হয় যাতে হার্ডওয়্যার
+   *  রিলিজ হয়, (২) enumerateDevices দিয়ে প্রকৃত ব্যাক/ফ্রন্ট ক্যামেরার deviceId বের করে
+   *  সেটা দিয়ে রিকোয়েস্ট করা হয় (exact facingMode-এর চেয়ে বেশি নির্ভরযোগ্য), (৩) deviceId
+   *  না পাওয়া গেলে facingMode দিয়ে ধাপে ধাপে fallback করা হয়।
+   */
   async switchCamera() {
     if (!this.localStream || !this.isVideo) return null;
-    this.currentCameraFacing = this.currentCameraFacing === 'user' ? 'environment' : 'user';
+    const targetFacing = this.currentCameraFacing === 'user' ? 'environment' : 'user';
 
     const oldVideoTrack = this.localStream.getVideoTracks()[0];
-    let newStream;
-    try {
-      newStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { exact: this.currentCameraFacing } }
-      });
-    } catch (e) {
-      // exact facingMode অসমর্থিত হলে fallback, নাহলে ব্ল্যাক স্ক্রিন থেকে যাবে
-      newStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: this.currentCameraFacing }
-      });
+    // হার্ডওয়্যার রিলিজ করার জন্য আগে পুরনো ট্র্যাক থামান — এটাই মূল ফিক্স।
+    if (oldVideoTrack) {
+      oldVideoTrack.stop();
+      this.localStream.removeTrack(oldVideoTrack);
     }
+
+    let newStream = null;
+    let lastError = null;
+
+    // ধাপ ১: enumerateDevices দিয়ে সঠিক ক্যামেরা deviceId বের করার চেষ্টা
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+      const guess = videoInputs.find((d) =>
+        targetFacing === 'environment'
+          ? /back|rear|environment/i.test(d.label)
+          : /front|user|face/i.test(d.label)
+      );
+      if (guess) {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { deviceId: { exact: guess.deviceId } }
+        });
+      }
+    } catch (e) {
+      lastError = e;
+      newStream = null;
+    }
+
+    // ধাপ ২: exact facingMode
+    if (!newStream) {
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { exact: targetFacing } }
+        });
+      } catch (e) {
+        lastError = e;
+        newStream = null;
+      }
+    }
+
+    // ধাপ ৩: ideal facingMode (ব্রাউজার/ডিভাইসকে নিজে বেছে নিতে দিন, নাহলে সম্পূর্ণ ব্যর্থ হয়ে যাবে)
+    if (!newStream) {
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: targetFacing } }
+        });
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (!newStream) {
+      // কোনো ধাপই কাজ করেনি — পুরনো ক্যামেরা ফিরিয়ে আনার চেষ্টা করুন যাতে অন্তত কালো স্ক্রিন না থাকে
+      try {
+        const restored = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: this.currentCameraFacing }
+        });
+        const restoredTrack = restored.getVideoTracks()[0];
+        this.localStream.addTrack(restoredTrack);
+        for (const link of this.links.values()) await link.replaceVideoTrack(restoredTrack);
+      } catch {
+        // কিছুই করার নেই
+      }
+      throw lastError || new Error('ক্যামেরা পাল্টানো যায়নি');
+    }
+
+    this.currentCameraFacing = targetFacing;
     const newTrack = newStream.getVideoTracks()[0];
 
     for (const link of this.links.values()) {
       await link.replaceVideoTrack(newTrack);
-    }
-
-    if (oldVideoTrack) {
-      oldVideoTrack.stop();
-      this.localStream.removeTrack(oldVideoTrack);
     }
     this.localStream.addTrack(newTrack);
     return this.localStream;
