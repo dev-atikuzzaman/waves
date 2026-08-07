@@ -116,7 +116,16 @@
             <button id="edit-banner-close" class="icon-btn sm" aria-label="বাতিল">✕</button>
           </div>
 
+          <div id="emoji-picker" class="emoji-picker hidden">
+            <div class="emoji-picker-search-row">
+              <input id="emoji-search" type="search" placeholder="ইমোজি খুঁজুন..." autocomplete="off" />
+            </div>
+            <div id="emoji-tabs" class="emoji-tabs"></div>
+            <div id="emoji-grid" class="emoji-grid"></div>
+          </div>
+
           <form id="composer" class="composer">
+            <button type="button" id="emoji-btn" class="icon-btn" title="ইমোজি" aria-label="ইমোজি পিকার খুলুন">😊</button>
             <button type="button" id="attach-btn" class="icon-btn" title="ফাইল/ছবি পাঠান" aria-label="সংযুক্ত করুন">📎</button>
             <input id="file-input" type="file" class="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.txt" />
             <input id="message-input" type="text" placeholder="একটা বার্তা লিখুন..." autocomplete="off" />
