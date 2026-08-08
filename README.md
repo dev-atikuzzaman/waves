@@ -64,11 +64,20 @@ npm run dev
 3. **Authentication → Providers → Email** এ গিয়ে:
    - "Confirm email" অন থাকলে OTP ফ্লো ঠিকভাবে কাজ করবে
    - Email OTP এমনিতেই এনাবল থাকে; আলাদা কিছু করার দরকার নেই
-4. **Authentication → URL Configuration** এ আপনার Vercel ডোমেইন (যেমন `https://your-app.vercel.app`) `Site URL` ও `Redirect URLs`-এ যোগ করুন।
-5. **Project Settings → API** থেকে কপি করুন:
+4. **Authentication → Providers → Google** এনাবল করুন (Google দিয়ে পাসওয়ার্ড/OTP ছাড়া এক-ক্লিক লগইনের জন্য):
+   - [Google Cloud Console](https://console.cloud.google.com/apis/credentials) এ একটা **OAuth 2.0 Client ID** বানান (Application type: **Web application**)
+   - **Authorized redirect URIs**-এ Supabase-এর দেওয়া কলব্যাক URL বসান — এটা Supabase Dashboard-এর Google provider পেজেই দেখানো থাকে, সাধারণত এরকম দেখতে: `https://<PROJECT_REF>.supabase.co/auth/v1/callback`
+   - Google Cloud Console থেকে পাওয়া **Client ID** ও **Client Secret** Supabase Dashboard-এর Google provider ফর্মে বসিয়ে Save করুন
+   - **Authorized JavaScript origins**-এ আপনার অ্যাপের ডোমেইন (`http://localhost:5173` ডেভেলপমেন্টে, আর প্রোডাকশনে আপনার Vercel ডোমেইন) যোগ করুন
+   - এটা সেটআপ না করলে "Google দিয়ে চালিয়ে যান" বাটনে ক্লিক করলে এরর আসবে, কিন্তু ইমেইল OTP লগইন ঠিকই কাজ করবে
+5. **Authentication → URL Configuration** এ আপনার Vercel ডোমেইন (যেমন `https://your-app.vercel.app`) `Site URL` ও `Redirect URLs`-এ যোগ করুন। এটা OTP ও Google — দুই ধরনের লগইনের জন্যই দরকার, কারণ Google সাইন-ইনের পর Supabase এই URL-এই ফিরিয়ে আনে।
+6. **Project Settings → API** থেকে কপি করুন:
    - `Project URL` → `VITE_SUPABASE_URL`
    - `anon public` key → `VITE_SUPABASE_ANON_KEY`
-6. **Database → Replication** এ গিয়ে নিশ্চিত করুন `messages` ও `profiles` টেবিল Realtime publication-এ আছে (স্কিমা স্ক্রিপ্টেই এটা করা হয়, তবু চেক করে নিন)।
+7. **Database → Replication** এ গিয়ে নিশ্চিত করুন `messages` ও `profiles` টেবিল Realtime publication-এ আছে (স্কিমা স্ক্রিপ্টেই এটা করা হয়, তবু চেক করে নিন)।
+
+### Google সাইন-ইন কীভাবে কাজ করে
+বাটনে ক্লিক করলে `signInWithGoogle()` ব্রাউজারকে Google-এর কনসেন্ট স্ক্রিনে পাঠায়। সেখানে অনুমতি দিলে Google ব্যবহারকারীকে ফিরিয়ে আনে অ্যাপের URL-এ (৫নং ধাপে সেট করা), আর Supabase নিজে থেকেই একটা সেশন তৈরি করে ফেলে — এই সেশন `onAuthChange()`-এ ঠিক ইমেইল OTP লগইনের মতোই ধরা পড়ে, তাই বাকি অ্যাপ কোনো পার্থক্য বোঝে না। প্রথমবার Google দিয়ে সাইন-ইন করলে `ensureProfile()` Google প্রোফাইল থেকে নাম ও ছবি নিয়ে স্বয়ংক্রিয়ভাবে `profiles` টেবিলে রো বানিয়ে দেয়। কেউ যদি একই ইমেইল দিয়ে আগে OTP দিয়ে লগইন করে থাকে, Supabase একই ইউজার হিসেবে দুটো পদ্ধতিকেই এক রাখে (Supabase একাউন্ট-লিংকিং অটো হ্যান্ডেল করে)।
 
 ## ৩) Web Push সেটআপ (কল/মেসেজ নোটিফিকেশন অ্যাপ বন্ধ থাকলেও পেতে)
 
