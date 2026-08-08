@@ -43,10 +43,14 @@ create table if not exists public.messages (
   attachment_size integer,
   attachment_duration numeric, -- seconds, for voice notes
   reply_to_id uuid references public.messages(id) on delete set null,
+  forwarded boolean not null default false, -- ফরওয়ার্ড করা মেসেজ কিনা (WhatsApp-স্টাইল "Forwarded" ট্যাগের জন্য)
   edited_at timestamptz,
   deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- ইতিমধ্যে ডিপ্লয় করা DB-তে schema.sql আবার রান করলেও নতুন কলাম যোগ হবে (idempotent)
+alter table public.messages add column if not exists forwarded boolean not null default false;
 
 -- প্রতিটি মেসেজের delivered/seen অবস্থা প্রতিটি প্রাপকের জন্য আলাদাভাবে ট্র্যাক করে
 create table if not exists public.message_receipts (
@@ -395,10 +399,10 @@ declare
   -- ⚠️ বাগ ফিক্স: আগে এখানে 'https:' এর পরে '//' মিসিং ছিল (https:muirh...) —
   -- এটা একটা অবৈধ URL, তাই pg_net এর প্রতিটা কল নীরবে ব্যর্থ হচ্ছিল এবং
   -- টেক্সট মেসেজের পুশ নোটিফিকেশন কখনোই যাচ্ছিল না (কোনো এরর ছাড়াই)।
-  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
-  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  if fn_url like '%muirhdipmymeganwrpgk%' then
+  if fn_url like '%<PROJECT_REF>%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
   end if;
 
@@ -422,10 +426,10 @@ create trigger trg_notify_new_message
 create or replace function public.notify_new_call()
 returns trigger as $$
 declare
-  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
-  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  if fn_url like '%muirhdipmymeganwrpgk%' then
+  if fn_url like '%<PROJECT_REF>%' then
     return new;
   end if;
 
