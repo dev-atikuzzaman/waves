@@ -30,10 +30,10 @@
 create or replace function public.notify_new_message()
 returns trigger as $$
 declare
-  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-  fn_secret text := '<WEBHOOK_SECRET>';
+  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
+  fn_secret text := 'e9f4a82b01c3d5e7f6a8b0c2d4e6f8a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e2';
 begin
-  if fn_url like '%<PROJECT_REF>%' or fn_secret like '%<WEBHOOK_SECRET>%' then
+  if fn_url like '%muirhdipmymeganwrpgk%' or fn_secret like '%e9f4a82b01c3d5e7f6a8b0c2d4e6f8a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e2%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
   end if;
 
@@ -52,10 +52,10 @@ $$ language plpgsql security definer;
 create or replace function public.notify_new_call()
 returns trigger as $$
 declare
-  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-  fn_secret text := '<WEBHOOK_SECRET>';
+  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
+  fn_secret text := 'e9f4a82b01c3d5e7f6a8b0c2d4e6f8a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e2';
 begin
-  if fn_url like '%<PROJECT_REF>%' or fn_secret like '%<WEBHOOK_SECRET>%' then
+  if fn_url like '%muirhdipmymeganwrpgk%' or fn_secret like '%e9f4a82b01c3d5e7f6a8b0c2d4e6f8a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e2%' then
     return new;
   end if;
 
