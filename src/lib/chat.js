@@ -169,6 +169,28 @@ export async function sendAttachmentMessage(chatId, senderId, file, { kind, repl
   return data;
 }
 
+/** একটা বিদ্যমান মেসেজ এক বা একাধিক চ্যাটে ফরওয়ার্ড করুন। অ্যাটাচমেন্ট থাকলে সেটা
+ *  আবার আপলোড করা হয় না — একই attachment_url পুনর্ব্যবহার করা হয় (দ্রুত ও কম স্টোরেজ খরচ)।
+ *  ফরওয়ার্ড করা মেসেজ মূল মেসেজের reply/edit ইতিহাস বহন করে না, শুধু কনটেন্ট বহন করে,
+ *  এবং forwarded=true দিয়ে চিহ্নিত থাকে যাতে UI-তে "ফরওয়ার্ড করা হয়েছে" লেবেল দেখানো যায়। */
+export async function forwardMessage(message, targetChatIds, senderId) {
+  const rows = targetChatIds.map((chat_id) => ({
+    chat_id,
+    sender_id: senderId,
+    body: message.body,
+    kind: message.kind || 'text',
+    attachment_url: message.attachment_url || null,
+    attachment_name: message.attachment_name || null,
+    attachment_size: message.attachment_size || null,
+    attachment_duration: message.attachment_duration || null,
+    forwarded: true
+  }));
+
+  const { data, error } = await supabase.from('messages').insert(rows).select();
+  if (error) throw error;
+  return data;
+}
+
 export async function editMessage(messageId, newBody) {
   const { error } = await supabase
     .from('messages')
