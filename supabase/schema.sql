@@ -399,10 +399,10 @@ declare
   -- ⚠️ বাগ ফিক্স: আগে এখানে 'https:' এর পরে '//' মিসিং ছিল (https:muirh...) —
   -- এটা একটা অবৈধ URL, তাই pg_net এর প্রতিটা কল নীরবে ব্যর্থ হচ্ছিল এবং
   -- টেক্সট মেসেজের পুশ নোটিফিকেশন কখনোই যাচ্ছিল না (কোনো এরর ছাড়াই)।
-  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-  fn_secret text := '<WEBHOOK_SECRET>';
+  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
+  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
 begin
-  if fn_url like '%<PROJECT_REF>%' then
+  if fn_url like '%muirhdipmymeganwrpgk%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
   end if;
 
@@ -426,10 +426,10 @@ create trigger trg_notify_new_message
 create or replace function public.notify_new_call()
 returns trigger as $$
 declare
-  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
-  fn_secret text := '<WEBHOOK_SECRET>';
+  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
+  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
 begin
-  if fn_url like '%<PROJECT_REF>%' then
+  if fn_url like '%muirhdipmymeganwrpgk%' then
     return new;
   end if;
 
