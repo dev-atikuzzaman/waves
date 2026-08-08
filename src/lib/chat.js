@@ -169,28 +169,6 @@ export async function sendAttachmentMessage(chatId, senderId, file, { kind, repl
   return data;
 }
 
-/**
- * একটা মেসেজ (টেক্সট/ছবি/ফাইল/ভয়েস) এক বা একাধিক চ্যাটে ফরওয়ার্ড করুন।
- * অ্যাটাচমেন্ট থাকলে আবার আপলোড করা হয় না — একই স্টোরেজ URL রিইউজ করা হয়,
- * শুধু নতুন একটা মেসেজ-রো তৈরি হয় forwarded=true সহ (reply/edit history ছাড়াই)।
- */
-export async function forwardMessage(originalMsg, targetChatIds, senderId) {
-  const rows = targetChatIds.map((chatId) => ({
-    chat_id: chatId,
-    sender_id: senderId,
-    body: originalMsg.body,
-    kind: originalMsg.kind || 'text',
-    attachment_url: originalMsg.attachment_url || null,
-    attachment_name: originalMsg.attachment_name || null,
-    attachment_size: originalMsg.attachment_size || null,
-    attachment_duration: originalMsg.attachment_duration || null,
-    forwarded: true
-  }));
-  const { data, error } = await supabase.from('messages').insert(rows).select();
-  if (error) throw error;
-  return data;
-}
-
 export async function editMessage(messageId, newBody) {
   const { error } = await supabase
     .from('messages')
