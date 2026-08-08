@@ -79,10 +79,32 @@
         </header>
 
         <div class="search-row">
+          <span class="search-icon" aria-hidden="true">🔍</span>
           <input id="search-input" type="search" placeholder="নাম বা ইমেইল দিয়ে খুঁজুন..." />
         </div>
 
+        <div id="filter-pills" class="filter-pills" role="tablist" aria-label="চ্যাট ফিল্টার">
+          <button type="button" class="filter-pill active" data-filter="all" role="tab" aria-selected="true">সব</button>
+          <button type="button" class="filter-pill" data-filter="unread" role="tab" aria-selected="false">অপঠিত</button>
+          <button type="button" class="filter-pill" data-filter="groups" role="tab" aria-selected="false">গ্রুপ</button>
+        </div>
+
         <ul id="chat-list" class="chat-list" aria-label="চ্যাট তালিকা"></ul>
+
+        <button id="new-chat-fab" class="fab" aria-label="নতুন চ্যাট" title="নতুন চ্যাট">
+          <span aria-hidden="true">💬</span>
+        </button>
+
+        <nav id="bottom-nav" class="bottom-nav" aria-label="প্রধান নেভিগেশন">
+          <button type="button" class="bottom-nav-item active" data-nav="chats">
+            <span class="bottom-nav-icon" aria-hidden="true">💬</span>
+            <span>চ্যাট</span>
+          </button>
+          <button type="button" class="bottom-nav-item" data-nav="calls">
+            <span class="bottom-nav-icon" aria-hidden="true">📞</span>
+            <span>কল</span>
+          </button>
+        </nav>
       </aside>
 
       <main id="chat-pane" class="chat-pane">
