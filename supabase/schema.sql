@@ -374,35 +374,44 @@ create trigger trg_touch_chat
 -- session-level GUC অনেক সময় নতুন কানেকশনে propagate হয় না, ফলে ট্রিগার
 -- নীরবে স্কিপ হয়ে যেত এবং পুশ কখনোই পাঠানো হতো না — কোনো এরর ছাড়াই)।
 --
--- নিচের STEP 4 রান করার আগে দুই জায়গায় বসান:
+-- নিচের STEP 4 রান করার আগে SQL Editor-এ পেস্ট করে দুই জায়গায় বসান (নিচের
+-- <PROJECT_REF> ও <WEBHOOK_SECRET> সহ মোট ৪টা জায়গা — দুটো ফাংশনেই একই মান):
 --   ১) <PROJECT_REF> কে আপনার Supabase প্রজেক্ট রেফ দিয়ে বদলান
 --   ২) <WEBHOOK_SECRET> কে আপনার supabase secrets set WEBHOOK_SECRET=... এ
 --      যেটা বসিয়েছেন ঠিক সেটা দিয়ে বদলান
+-- 🔴 এই বদলানো ভার্সনটা শুধু SQL Editor-এ রান করুন — schema.sql ফাইলে (যেটা গিটে
+-- কমিট হয়) আসল মান বসিয়ে সেভ করবেন না, ফাইলে সবসময় placeholder-ই থাকা উচিত।
 --
--- 🔴 সিকিউরিটি সতর্কতা: আপনার আগের schema.sql-এ এই দুই প্লেসহোল্ডারের জায়গায়
--- আসল প্রজেক্ট রেফ এবং আসল WEBHOOK_SECRET হার্ডকোড করা অবস্থায় ছিল, এবং ফাইলটা
--- মনে হচ্ছে GitHub রিপোতে কমিট করা হয়েছে। এর মানে ওই সিক্রেটটা এখন এক্সপোজড
--- ধরে নিতে হবে। এই ফাইল আবার রান করার আগে:
+-- 🔴 সিকিউরিটি সতর্কতা (এখনই করুন): এই রিপোর schema.sql-এ আগে <PROJECT_REF> ও
+-- <WEBHOOK_SECRET>-এর জায়গায় আসল মান হার্ডকোড করা অবস্থায় কমিট হয়ে গিয়েছিল —
+-- ধরে নিন সেই সিক্রেটটা এখন এক্সপোজড। এই ফাইল আবার রান করার আগে:
 --   ১) নতুন সিক্রেট বানান:  openssl rand -hex 32
 --   ২) সেটা Edge Function-এ আপডেট করুন:  supabase secrets set WEBHOOK_SECRET=<নতুন-মান>
 --   ৩) supabase functions deploy send-push --no-verify-jwt (আবার ডিপ্লয় করুন)
---   ৪) নিচের <WEBHOOK_SECRET> প্লেসহোল্ডারে ওই *নতুন* মান বসান (পুরনোটা না)
--- এবং ভবিষ্যতে .gitignore-এ রিয়েল সিক্রেটসহ ফাইল যোগ করা এড়াতে, schema.sql-এর
--- কপি রিপোতে সবসময় প্লেসহোল্ডার আকারেই রাখুন — লোকাল/প্রোডাকশনে রান করার সময়
--- শুধু SQL Editor-এ সাময়িকভাবে মান বসিয়ে রান করুন, ফাইলে সেভ করে কমিট করবেন না।
+--   ৪) SQL Editor-এ (ফাইলে না) নিচের placeholder-এর জায়গায় ওই *নতুন* মান বসিয়ে রান করুন
+-- পুরনো সিক্রেটটা রোটেট করার পর গিট হিস্টোরিতে থেকে গেলেও সমস্যা নেই — কারণ ওটা
+-- দিয়ে আর কিছু করা যাবে না।
 -- =====================================================================
 create extension if not exists pg_net with schema extensions;
 
 create or replace function public.notify_new_message()
 returns trigger as $$
 declare
-  -- ⚠️ বাগ ফিক্স: আগে এখানে 'https:' এর পরে '//' মিসিং ছিল (https:muirh...) —
-  -- এটা একটা অবৈধ URL, তাই pg_net এর প্রতিটা কল নীরবে ব্যর্থ হচ্ছিল এবং
-  -- টেক্সট মেসেজের পুশ নোটিফিকেশন কখনোই যাচ্ছিল না (কোনো এরর ছাড়াই)।
-  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
-  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
+  -- ⚠️ বাগ ফিক্স ১: আগে এখানে 'https:' এর পরে '//' মিসিং ছিল (https:muirh...) —
+  -- এটা একটা অবৈধ URL, তাই pg_net এর প্রতিটা কল নীরবে ব্যর্থ হচ্ছিল।
+  -- ⚠️ বাগ ফিক্স ২ (আসল কারণ, আরও গুরুতর): নিচের "is-this-still-a-placeholder"
+  -- চেকটা ভুলভাবে <PROJECT_REF> প্লেসহোল্ডার বদলানোর *পরের* আসল প্রজেক্ট-রেফ স্ট্রিং
+  -- দিয়ে লেখা হয়েছিল। ফলে URL-টা বৈধভাবে পূরণ করার পরও `fn_url like '%...%'`
+  -- সবসময় true হতো (কারণ URL-এ তো সেই প্রজেক্ট-রেফ থাকবেই!), আর ফাংশন প্রতিবার
+  -- নীরবে `return new` করে বেরিয়ে যেত — pg_net-কে কখনো কলই করা হতো না। এটাই
+  -- অ্যাপ বন্ধ থাকলে কোনো নোটিফিকেশন (মেসেজ বা কল) না আসার আসল কারণ। এখন চেকটা
+  -- আক্ষরিক placeholder সিনট্যাক্স ("<PROJECT_REF>") এর সাথে মেলে, যেটা বাস্তব কোনো
+  -- প্রজেক্ট-রেফে কখনো থাকবে না (< > ক্যারেক্টার প্রজেক্ট-রেফে বৈধ না) — তাই সঠিকভাবে
+  -- শুধু তখনই স্কিপ করবে যখন সত্যিই এখনো বসানো হয়নি।
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  if fn_url like '%muirhdipmymeganwrpgk%' then
+  if fn_url like '%<PROJECT_REF>%' or fn_secret like '%<WEBHOOK_SECRET>%' then
     return new; -- এখনো সেটআপ করা হয়নি (উপরের প্লেসহোল্ডার বদলানো হয়নি) — চুপচাপ স্কিপ করুন
   end if;
 
@@ -426,10 +435,10 @@ create trigger trg_notify_new_message
 create or replace function public.notify_new_call()
 returns trigger as $$
 declare
-  fn_url text := 'https://muirhdipmymeganwrpgk.supabase.co/functions/v1/send-push';
-  fn_secret text := 'f4a8b2c6d9e1f3a5b7c0d2e4f6a8b1c3d5e7f9a2b4c6d8e0f1a3b5c7d9e1f2a4';
+  fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
+  fn_secret text := '<WEBHOOK_SECRET>';
 begin
-  if fn_url like '%muirhdipmymeganwrpgk%' then
+  if fn_url like '%<PROJECT_REF>%' or fn_secret like '%<WEBHOOK_SECRET>%' then
     return new;
   end if;
 
