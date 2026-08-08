@@ -142,6 +142,7 @@ input { font-family: inherit; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
 }
 .sidebar-header {
   display: flex;
@@ -187,37 +188,90 @@ input { font-family: inherit; }
 .icon-btn:hover { color: var(--text); border-color: var(--emerald); }
 .icon-btn.accent { background: var(--emerald-soft); color: var(--emerald); border-color: transparent; }
 
-.search-row { padding: 4px 18px 12px; }
+.search-row { padding: 4px 18px 12px; position: relative; display: flex; align-items: center; }
+.search-icon {
+  position: absolute; left: 30px; font-size: 14px; color: var(--text-mute); pointer-events: none;
+}
 .search-row input {
   width: 100%;
   background: var(--ink-700);
   border: 1px solid var(--line);
   border-radius: 20px;
-  padding: 10px 16px;
+  padding: 10px 16px 10px 40px;
   color: var(--text);
   font-size: 14px;
 }
+.search-row input:focus { border-color: var(--emerald); }
 
-.chat-list { list-style: none; margin: 0; padding: 4px 8px; overflow-y: auto; flex: 1; }
+/* ---------------- Filter pills (WhatsApp-style: সব / অপঠিত / গ্রুপ) ---------------- */
+.filter-pills {
+  display: flex; gap: 8px; padding: 2px 18px 12px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.filter-pills::-webkit-scrollbar { display: none; }
+.filter-pill {
+  flex-shrink: 0; background: var(--ink-700); border: 1px solid var(--line);
+  color: var(--text-dim); font-size: 13px; font-weight: 600;
+  padding: 6px 16px; border-radius: 20px; transition: all 0.15s ease;
+}
+.filter-pill:hover { border-color: var(--emerald); color: var(--text); }
+.filter-pill.active {
+  background: var(--emerald-soft); color: var(--emerald); border-color: transparent;
+}
+
+.chat-list { list-style: none; margin: 0; padding: 4px 8px 84px; overflow-y: auto; flex: 1; }
 .chat-item {
   display: flex; align-items: center; gap: 12px;
   padding: 10px; border-radius: var(--radius-md);
   cursor: pointer; transition: background 0.15s ease;
+  position: relative;
 }
 .chat-item:hover, .chat-item.active { background: var(--ink-800); }
 .chat-item-body { flex: 1; min-width: 0; }
-.chat-item-top { display: flex; justify-content: space-between; align-items: baseline; }
+.chat-item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .chat-item-top strong { font-size: 14.5px; }
-.chat-item-time { font-size: 11.5px; color: var(--text-mute); }
+.chat-item-time { font-size: 11.5px; color: var(--text-mute); flex-shrink: 0; }
+.chat-item-time.unread-time { color: var(--emerald); font-weight: 700; }
+.chat-item-bottom-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; }
 .chat-item-preview {
-  font-size: 13px; color: var(--text-dim);
+  font-size: 13px; color: var(--text-dim); flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.chat-item.has-unread .chat-item-preview { color: var(--text); font-weight: 600; }
 .unread-badge {
   background: var(--emerald); color: #06120F; font-size: 11px; font-weight: 700;
-  min-width: 20px; height: 20px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; border-radius: 50%; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
+.pin-icon { font-size: 12px; color: var(--text-mute); flex-shrink: 0; transform: rotate(45deg); }
+
+/* ---------------- Floating action button (নতুন চ্যাট) ---------------- */
+.fab {
+  position: absolute; right: 20px; bottom: 84px; z-index: 4;
+  width: 54px; height: 54px; border-radius: 50%; border: none;
+  background: linear-gradient(135deg, var(--emerald), var(--emerald-strong));
+  color: #08120F; font-size: 22px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-1); transition: transform 0.15s ease;
+}
+.fab:hover { transform: scale(1.06); }
+.fab:active { transform: scale(0.96); }
+
+/* ---------------- Bottom navigation (Chats / Calls) ---------------- */
+.bottom-nav {
+  display: flex; border-top: 1px solid var(--line); background: var(--ink-900);
+  flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.bottom-nav-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none; padding: 9px 4px 8px;
+  color: var(--text-mute); font-size: 11px; font-weight: 600;
+  transition: color 0.15s ease;
+}
+.bottom-nav-icon { font-size: 19px; line-height: 1; }
+.bottom-nav-item.active { color: var(--emerald); }
+.bottom-nav-item:hover { color: var(--text-dim); }
+.bottom-nav-item.active:hover { color: var(--emerald); }
 
 /* ---------------- Chat pane ---------------- */
 .chat-pane { position: relative; background: var(--ink-950); display: flex; flex-direction: column; min-width: 0; }

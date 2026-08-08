@@ -66,6 +66,9 @@ const myName = $('my-name');
 const logoutBtn = $('logout-btn');
 const searchInput = $('search-input');
 const chatListEl = $('chat-list');
+const filterPillsEl = $('filter-pills');
+const newChatFab = $('new-chat-fab');
+const bottomNav = $('bottom-nav');
 
 const sidebar = $('sidebar');
 const chatPane = $('chat-pane');
@@ -314,19 +317,41 @@ function renderSearchResults(results) {
 }
 
 // ---------- Chat list ----------
+let cachedChats = [];
+let activeFilter = 'all';
+
 async function refreshChatList() {
   const chats = await loadMyChats(currentUser.id);
+  cachedChats = chats;
   myChatIds = chats.map((c) => c.id);
   ensureGlobalMessageSubscription();
+  renderChatList();
+}
+
+function renderChatList() {
   chatListEl.innerHTML = '';
-  if (!chats.length) {
-    chatListEl.innerHTML = `<li class="empty-state" style="padding:24px;">উপরে সার্চ করে কারও সাথে চ্যাট শুরু করুন</li>`;
+  const visibleChats = cachedChats.filter((chat) => {
+    if (!chat.isGroup && !chat.peer) return false;
+    if (activeFilter === 'unread') return chat.unreadCount > 0;
+    if (activeFilter === 'groups') return chat.isGroup;
+    return true;
+  });
+
+  if (!visibleChats.length) {
+    const emptyMsg =
+      activeFilter === 'unread'
+        ? 'কোনো অপঠিত চ্যাট নেই'
+        : activeFilter === 'groups'
+        ? 'কোনো গ্রুপ নেই'
+        : 'উপরে সার্চ করে কারও সাথে চ্যাট শুরু করুন';
+    chatListEl.innerHTML = `<li class="empty-state" style="padding:24px;">${emptyMsg}</li>`;
     return;
   }
-  for (const chat of chats) {
-    if (!chat.isGroup && !chat.peer) continue;
+
+  for (const chat of visibleChats) {
     const li = document.createElement('li');
-    li.className = 'chat-item' + (chat.id === activeChatId ? ' active' : '');
+    const hasUnread = chat.unreadCount > 0;
+    li.className = 'chat-item' + (chat.id === activeChatId ? ' active' : '') + (hasUnread ? ' has-unread' : '');
     const label = chat.isGroup ? (chat.name || 'গ্রুপ') : chat.peer.display_name;
     const avatarSrc = chat.isGroup
       ? `https://api.dicebear.com/9.x/shapes/svg?seed=${encodeURIComponent(chat.name || chat.id)}`
@@ -344,14 +369,20 @@ async function refreshChatList() {
         : escapeHtml(chat.lastMsg.body);
     }
     const time = chat.lastMsg ? formatTime(chat.lastMsg.created_at) : '';
+    const badgeHtml = hasUnread
+      ? `<span class="unread-badge">${chat.unreadCount > 99 ? '99+' : chat.unreadCount}</span>`
+      : '';
     li.innerHTML = `
       <div class="avatar-ring sm"><img class="avatar" src="${avatarSrc}" alt="" /></div>
       <div class="chat-item-body">
         <div class="chat-item-top">
           <strong>${escapeHtml(label)}</strong>
-          <span class="chat-item-time">${time}</span>
+          <span class="chat-item-time${hasUnread ? ' unread-time' : ''}">${time}</span>
         </div>
-        <div class="chat-item-preview">${preview}</div>
+        <div class="chat-item-bottom-row">
+          <div class="chat-item-preview">${preview}</div>
+          ${badgeHtml}
+        </div>
       </div>`;
     li.addEventListener('click', async () => {
       try {
@@ -363,6 +394,41 @@ async function refreshChatList() {
     chatListEl.appendChild(li);
   }
 }
+
+filterPillsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.filter-pill');
+  if (!btn) return;
+  activeFilter = btn.dataset.filter;
+  [...filterPillsEl.children].forEach((el) => {
+    const isActive = el === btn;
+    el.classList.toggle('active', isActive);
+    el.setAttribute('aria-selected', String(isActive));
+  });
+  renderChatList();
+});
+
+newChatFab.addEventListener('click', () => {
+  searchInput.focus();
+  searchInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+bottomNav.addEventListener('click', (e) => {
+  const btn = e.target.closest('.bottom-nav-item');
+  if (!btn) return;
+  const target = btn.dataset.nav;
+  [...bottomNav.children].forEach((el) => el.classList.toggle('active', el === btn));
+  if (target === 'calls') {
+    callHistoryPanel.classList.remove('hidden');
+    renderCallHistory();
+  } else {
+    callHistoryPanel.classList.add('hidden');
+  }
+});
+
+// কল হিস্ট্রি প্যানেল যেকোনোভাবে বন্ধ হলে (✕ বাটনে) বটম-ন্যাভকে "চ্যাট" ট্যাবে ফিরিয়ে আনুন
+closeCallHistoryBtn.addEventListener('click', () => {
+  [...bottomNav.children].forEach((el) => el.classList.toggle('active', el.dataset.nav === 'chats'));
+});
 
 /** আমার সব চ্যাটের নতুন মেসেজে সাবস্ক্রাইব করে রাখুন (ট্যাব খোলা থাকলে) — যাতে বর্তমানে
  *  খোলা নেই এমন চ্যাটে মেসেজ এলেও সাউন্ড/টোস্ট দিয়ে জানানো যায়। "অ্যাপের ভিতরে থাকলে
@@ -406,6 +472,13 @@ async function openChat(chatId, peer, chatMeta = null) {
   const msgs = await loadMessages(chatId);
   renderMessages(msgs);
   markVisibleMessagesSeen(msgs);
+
+  // sidebar-এ আনরিড ব্যাজ সাথে সাথে সরিয়ে দিন (পরবর্তী refreshChatList()-এর জন্য অপেক্ষা না করে)
+  const cachedEntry = cachedChats.find((c) => c.id === chatId);
+  if (cachedEntry && cachedEntry.unreadCount > 0) {
+    cachedEntry.unreadCount = 0;
+    renderChatList();
+  }
 
   unsubMessages?.();
   unsubMessages = subscribeToMessages(chatId, {
@@ -1340,6 +1413,7 @@ endCallBtn.addEventListener('click', () => {
 // ---------- Call history ----------
 callHistoryBtn.addEventListener('click', async () => {
   callHistoryPanel.classList.remove('hidden');
+  [...bottomNav.children].forEach((el) => el.classList.toggle('active', el.dataset.nav === 'calls'));
   await renderCallHistory();
 });
 
