@@ -1,5 +1,5 @@
 import { supabase } from './lib/supabase.js';
-import { sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus } from './lib/auth.js';
+import { sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus, signInWithGoogle } from './lib/auth.js';
 import {
   searchProfiles,
   loadMyChats,
@@ -59,6 +59,7 @@ const authOtp = $('auth-otp');
 const otpRow = $('otp-row');
 const authSubmit = $('auth-submit');
 const authMsg = $('auth-msg');
+const googleSigninBtn = $('google-signin-btn');
 
 const myAvatar = $('my-avatar');
 const myName = $('my-name');
@@ -190,6 +191,23 @@ authForm.addEventListener('submit', async (e) => {
     authMsg.textContent = err.message || 'কিছু একটা ভুল হয়েছে';
   } finally {
     authSubmit.disabled = false;
+  }
+});
+
+/** Google দিয়ে এক-ক্লিকে সাইন-ইন/সাইন-আপ — পাসওয়ার্ড বা OTP কিছুই লাগে না।
+ *  signInWithOAuth() ব্রাউজারকে Google-এর কনসেন্ট স্ক্রিনে রিডাইরেক্ট করে দেয়,
+ *  তারপর আবার অ্যাপে ফিরিয়ে আনে — ফিরে আসার পর নিচের onAuthChange() স্বয়ংক্রিয়ভাবে
+ *  সেশন ধরে ফেলে (OTP দিয়ে লগইন করলে যেভাবে হয়, ঠিক একইভাবে)। */
+googleSigninBtn.addEventListener('click', async () => {
+  googleSigninBtn.disabled = true;
+  authMsg.textContent = '';
+  try {
+    await signInWithGoogle();
+    // এখান থেকে ব্রাউজার Google-এ রিডাইরেক্ট হয়ে যাবে, তাই এই ফাংশনের বাকি অংশ
+    // সাধারণত রান হয় না — রিডাইরেক্ট ব্যর্থ হলেই শুধু নিচের catch/finally চলবে।
+  } catch (err) {
+    authMsg.textContent = err.message || 'Google দিয়ে সাইন-ইন করা যায়নি';
+    googleSigninBtn.disabled = false;
   }
 });
 
