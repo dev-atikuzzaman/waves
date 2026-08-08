@@ -1,4 +1,4 @@
-import { supabase, withSessionRetry } from './supabase.js';
+import { supabase } from './supabase.js';
 
 /** ইমেইল/নাম দিয়ে ব্যবহারকারী খুঁজুন (নিজেকে বাদ দিয়ে) */
 export async function searchProfiles(query, myId) {
@@ -88,43 +88,38 @@ export async function getOrCreateDirectChat(myId, peerId) {
     }
   }
 
-  // নতুন চ্যাট তৈরি — RLS এরর এলে (স্টেল সেশন টোকেন) একবার রিফ্রেশ করে রিট্রাই করা হয়
-  return withSessionRetry(async () => {
-    const { data: chat, error: chatErr } = await supabase
-      .from('chats')
-      .insert({ is_group: false, created_by: myId })
-      .select()
-      .single();
-    if (chatErr) throw chatErr;
+  const { data: chat, error: chatErr } = await supabase
+    .from('chats')
+    .insert({ is_group: false, created_by: myId })
+    .select()
+    .single();
+  if (chatErr) throw chatErr;
 
-    const { error: memErr } = await supabase
-      .from('chat_members')
-      .insert([
-        { chat_id: chat.id, user_id: myId },
-        { chat_id: chat.id, user_id: peerId }
-      ]);
-    if (memErr) throw memErr;
+  const { error: memErr } = await supabase
+    .from('chat_members')
+    .insert([
+      { chat_id: chat.id, user_id: myId },
+      { chat_id: chat.id, user_id: peerId }
+    ]);
+  if (memErr) throw memErr;
 
-    return chat.id;
-  });
+  return chat.id;
 }
 
 /** নতুন গ্রুপ চ্যাট তৈরি করুন (একাধিক সদস্যসহ — গ্রুপ কল/গ্রুপ চ্যাট উভয়ের ভিত্তি) */
 export async function createGroupChat(myId, memberIds, name) {
-  return withSessionRetry(async () => {
-    const { data: chat, error: chatErr } = await supabase
-      .from('chats')
-      .insert({ is_group: true, name, created_by: myId })
-      .select()
-      .single();
-    if (chatErr) throw chatErr;
+  const { data: chat, error: chatErr } = await supabase
+    .from('chats')
+    .insert({ is_group: true, name, created_by: myId })
+    .select()
+    .single();
+  if (chatErr) throw chatErr;
 
-    const rows = [myId, ...memberIds.filter((id) => id !== myId)].map((user_id) => ({ chat_id: chat.id, user_id }));
-    const { error: memErr } = await supabase.from('chat_members').insert(rows);
-    if (memErr) throw memErr;
+  const rows = [myId, ...memberIds.filter((id) => id !== myId)].map((user_id) => ({ chat_id: chat.id, user_id }));
+  const { error: memErr } = await supabase.from('chat_members').insert(rows);
+  if (memErr) throw memErr;
 
-    return chat.id;
-  });
+  return chat.id;
 }
 
 export async function loadMessages(chatId, limit = 100) {
