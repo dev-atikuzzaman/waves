@@ -13,7 +13,7 @@ export async function searchProfiles(query, myId) {
   return data;
 }
 
-/** আমার সব চ্যাট (সর্বশেষ মেসেজ + পিয়ার প্রোফাইলসহ) লোড করুন */
+/** আমার সব চ্যাট (সর্বশেষ মেসেজ + পিয়ার প্রোফাইল + আনরিড কাউন্টসহ) লোড করুন */
 export async function loadMyChats(myId) {
   const { data, error } = await supabase
     .from('chat_members')
@@ -28,16 +28,37 @@ export async function loadMyChats(myId) {
     .eq('user_id', myId);
   if (error) throw error;
 
-  return (data || [])
+  const chats = (data || [])
     .map((row) => row.chats)
     .filter(Boolean)
     .map((chat) => {
       const members = chat.chat_members.map((m) => m.profiles).filter(Boolean);
       const peer = chat.is_group ? null : members.find((p) => p.id !== myId);
-      const lastMsg = [...chat.messages].sort(
-        (a, b) => new Date(b.created_at) - new Date(a.created_at)
-      )[0];
-      return { id: chat.id, isGroup: chat.is_group, name: chat.name, members, peer, lastMsg };
+      const sortedMsgs = [...chat.messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const lastMsg = sortedMsgs[0];
+      // অন্যরা পাঠানো (আমার নিজের না) এবং ডিলিট হয়নি এমন মেসেজের আইডি — আনরিড গণনার জন্য
+      const otherMsgIds = sortedMsgs.filter((m) => m.sender_id !== myId && !m.deleted_at).map((m) => m.id);
+      return { id: chat.id, isGroup: chat.is_group, name: chat.name, members, peer, lastMsg, otherMsgIds };
+    });
+
+  // সব চ্যাটের "অন্যের পাঠানো" মেসেজ আইডি একসাথে নিয়ে এক কোয়েরিতে আমার seen রিসিপ্ট চেক করুন
+  const allOtherMsgIds = chats.flatMap((c) => c.otherMsgIds);
+  let seenSet = new Set();
+  if (allOtherMsgIds.length) {
+    const { data: receipts } = await supabase
+      .from('message_receipts')
+      .select('message_id')
+      .eq('user_id', myId)
+      .not('seen_at', 'is', null)
+      .in('message_id', allOtherMsgIds);
+    seenSet = new Set((receipts || []).map((r) => r.message_id));
+  }
+
+  return chats
+    .map((chat) => {
+      const unreadCount = chat.otherMsgIds.filter((id) => !seenSet.has(id)).length;
+      const { otherMsgIds, ...rest } = chat;
+      return { ...rest, unreadCount };
     })
     .sort((a, b) => {
       const ta = a.lastMsg ? new Date(a.lastMsg.created_at) : 0;
