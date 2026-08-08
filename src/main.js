@@ -32,6 +32,20 @@ import { EMOJI_CATEGORIES } from './lib/emojiData.js';
 registerServiceWorker();
 unlockAudioOnFirstInteraction();
 
+/** --vh: 100dvh সাপোর্ট না-করা পুরনো ব্রাউজারে (এবং মোবাইলে ঠিকানা-বার/অন-স্ক্রিন কীবোর্ড
+ *  দেখা/লুকানোর সময়) app-কে সঠিক উচ্চতায় ফিট রাখার fallback। visualViewport থাকলে সেটাই
+ *  বেশি নির্ভুল, কারণ কীবোর্ড ওঠার সময় innerHeight অনেক ব্রাউজারে বদলায় না। */
+function setViewportHeightVar() {
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--vh', `${h * 0.01}px`);
+}
+setViewportHeightVar();
+window.addEventListener('resize', setViewportHeightVar);
+window.addEventListener('orientationchange', setViewportHeightVar);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', setViewportHeightVar);
+}
+
 // নোটিফিকেশনে ট্যাপ করলে service worker postMessage পাঠায় — সঠিক চ্যাট খুলে দিন
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', async (event) => {
@@ -310,6 +324,7 @@ function renderSearchResults(results) {
         openChat(chatId, profile);
       } catch (err) {
         toast(err.message || 'চ্যাট খুলতে সমস্যা হয়েছে');
+        if (err.name === 'SessionExpired') await signOut();
       }
     });
     chatListEl.appendChild(li);
@@ -1466,7 +1481,8 @@ async function renderCallHistory() {
         await openChat(chatId, target);
         await startOutgoingCall(log.is_video);
       } catch (err) {
-        toast('কল করা যায়নি');
+        toast(err.name === 'SessionExpired' ? err.message : 'কল করা যায়নি');
+        if (err.name === 'SessionExpired') await signOut();
       }
     });
     callHistoryList.appendChild(li);
