@@ -1,5 +1,5 @@
 import { supabase } from './lib/supabase.js';
-import { signInWithGoogle, sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus } from './lib/auth.js';
+import { sendOtp, verifyOtp, getSession, onAuthChange, signOut, ensureProfile, setOnlineStatus } from './lib/auth.js';
 import {
   searchProfiles,
   loadMyChats,
@@ -9,6 +9,7 @@ import {
   sendAttachmentMessage,
   editMessage,
   deleteMessage,
+  forwardMessage,
   toggleReaction,
   markDelivered,
   markSeen,
@@ -52,7 +53,6 @@ if ('serviceWorker' in navigator) {
 const $ = (id) => document.getElementById(id);
 const authScreen = $('auth-screen');
 const mainScreen = $('main-screen');
-const googleSigninBtn = $('google-signin-btn');
 const authForm = $('auth-form');
 const authEmail = $('auth-email');
 const authOtp = $('auth-otp');
@@ -126,6 +126,12 @@ const callHistoryPanel = $('call-history-panel');
 const closeCallHistoryBtn = $('close-call-history-btn');
 const callHistoryList = $('call-history-list');
 
+const forwardPanel = $('forward-panel');
+const closeForwardBtn = $('close-forward-btn');
+const forwardSearch = $('forward-search');
+const forwardChatList = $('forward-chat-list');
+const forwardConfirmBtn = $('forward-confirm-btn');
+
 const toastRoot = $('toast-root');
 
 // ---------- state ----------
@@ -150,6 +156,9 @@ let editingMessageId = null;
 let voiceRecorder = null;
 let recordingInterval = null;
 let openReactionPickerFor = null;
+let openBubbleMenuFor = null;
+let forwardTargetMsg = null;
+let forwardSelectedIds = new Set();
 let unsubAllMessages = null;
 let myChatIds = [];
 
@@ -162,18 +171,6 @@ function toast(text) {
 }
 
 // ---------- Auth flow ----------
-googleSigninBtn.addEventListener('click', async () => {
-  googleSigninBtn.disabled = true;
-  try {
-    // Google-এর কনসেন্ট পেজে রিডাইরেক্ট করে — সফল হলে Google নিজেই আবার এই পেজে ফিরিয়ে
-    // আনে এবং onAuthChange স্বয়ংক্রিয়ভাবে লগইন সম্পন্ন করে
-    await signInWithGoogle();
-  } catch (err) {
-    authMsg.textContent = err.message || 'Google সাইন-ইন করা যায়নি';
-    googleSigninBtn.disabled = false;
-  }
-});
-
 authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   authSubmit.disabled = true;
@@ -503,6 +500,10 @@ function buildBubble(msg) {
 
   let innerHtml = '';
 
+  if (msg.forwarded) {
+    innerHtml += `<div class="forwarded-tag">↪ ফরওয়ার্ড করা হয়েছে</div>`;
+  }
+
   if (msg.reply_to && !msg.reply_to.deleted_at) {
     const senderLabel = msg.reply_to.sender_id === currentUser.id ? 'আপনি' : (senderLabelFor(msg.reply_to.sender_id) || 'পিয়ার');
     innerHtml += `<div class="reply-quote"><span class="reply-quote-name">${escapeHtml(senderLabel)}</span>${escapeHtml(truncate(msg.reply_to.body, 80))}</div>`;
@@ -511,13 +512,14 @@ function buildBubble(msg) {
   if (msg.deleted_at) {
     innerHtml += `এই মেসেজটি মুছে ফেলা হয়েছে`;
   } else if (msg.kind === 'voice') {
-    innerHtml += `<div class="voice-note">🎤<audio controls src="${msg.attachment_url}"></audio></div>`;
+    innerHtml += `<div class="voice-note">🎤<audio controls src="${msg.attachment_url}"></audio><button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button></div>`;
   } else if (msg.kind === 'image') {
-    innerHtml += `<div class="attachment-bubble"><img class="attachment-image" src="${msg.attachment_url}" alt="ছবি" /></div>`;
+    innerHtml += `<div class="attachment-bubble"><button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button><img class="attachment-image" src="${msg.attachment_url}" alt="ছবি" /></div>`;
   } else if (msg.kind === 'file') {
     innerHtml += `<a class="attachment-file" href="${msg.attachment_url}" target="_blank" rel="noopener">
       <span class="attachment-file-icon">📎</span>
       <span class="attachment-file-name">${escapeHtml(msg.attachment_name || 'ফাইল')}</span>
+      <button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button>
     </a>`;
   } else {
     innerHtml += escapeHtml(msg.body);
@@ -529,54 +531,31 @@ function buildBubble(msg) {
   bubble.innerHTML = innerHtml;
 
   if (!msg.deleted_at) {
-    bubble.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openReactionPicker(bubble, msg);
-    });
+    attachLongPressReaction(bubble, msg);
+
+    const forwardIconBtn = bubble.querySelector('[data-forward-attachment]');
+    if (forwardIconBtn) {
+      forwardIconBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openForwardPicker(msg);
+      });
+    }
   }
 
   outer.appendChild(bubble);
 
   if (!msg.deleted_at) {
-    const actions = document.createElement('div');
-    actions.className = 'bubble-actions';
-
-    const replyBtn = document.createElement('button');
-    replyBtn.className = 'bubble-action-btn';
-    replyBtn.textContent = '↩ উত্তর';
-    replyBtn.addEventListener('click', (e) => {
+    const chevron = document.createElement('button');
+    chevron.type = 'button';
+    chevron.className = 'bubble-chevron';
+    chevron.textContent = '▾';
+    chevron.setAttribute('aria-label', 'মেসেজ অপশন');
+    chevron.addEventListener('click', (e) => {
       e.stopPropagation();
-      startReply(msg);
+      toggleBubbleMenu(bubble, msg);
     });
-    actions.appendChild(replyBtn);
-
-    if (msg.sender_id === currentUser.id && msg.kind === 'text') {
-      const editBtn = document.createElement('button');
-      editBtn.className = 'bubble-action-btn';
-      editBtn.textContent = '✎ এডিট';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        startEdit(msg);
-      });
-      actions.appendChild(editBtn);
-    }
-
-    if (msg.sender_id === currentUser.id) {
-      const delBtn = document.createElement('button');
-      delBtn.className = 'bubble-action-btn';
-      delBtn.textContent = '🗑 মুছুন';
-      delBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        try {
-          await deleteMessage(msg.id);
-        } catch (err) {
-          toast('মেসেজ মুছা যায়নি');
-        }
-      });
-      actions.appendChild(delBtn);
-    }
-
-    outer.appendChild(actions);
+    bubble.appendChild(chevron);
 
     const reactionsRow = document.createElement('div');
     reactionsRow.className = 'reactions-row';
@@ -587,6 +566,131 @@ function buildBubble(msg) {
 
   return outer;
 }
+
+/** মাউস/টাচ দিয়ে ~450ms চেপে ধরলে (long-press) কুইক-রিঅ্যাকশন পিকার খোলে — WhatsApp-এর মতো */
+function attachLongPressReaction(bubbleEl, msg) {
+  let pressTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let longPressFired = false;
+
+  const MOVE_CANCEL_PX = 10;
+  const HOLD_MS = 450;
+
+  const start = (x, y) => {
+    longPressFired = false;
+    startX = x;
+    startY = y;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      longPressFired = true;
+      closeBubbleMenu();
+      openReactionPicker(bubbleEl, msg);
+    }, HOLD_MS);
+  };
+  const move = (x, y) => {
+    if (Math.abs(x - startX) > MOVE_CANCEL_PX || Math.abs(y - startY) > MOVE_CANCEL_PX) {
+      clearTimeout(pressTimer);
+    }
+  };
+  const cancel = () => clearTimeout(pressTimer);
+
+  bubbleEl.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('[data-forward-attachment], .bubble-chevron, audio, a')) return;
+    start(e.clientX, e.clientY);
+  });
+  bubbleEl.addEventListener('pointermove', (e) => move(e.clientX, e.clientY));
+  bubbleEl.addEventListener('pointerup', cancel);
+  bubbleEl.addEventListener('pointerleave', cancel);
+  bubbleEl.addEventListener('pointercancel', cancel);
+  bubbleEl.addEventListener('click', (e) => {
+    if (longPressFired) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+}
+
+/** চেভরন (▾) চাপলে খুলে যাওয়া অপশন-ড্রপডাউন — WhatsApp-স্টাইল */
+function toggleBubbleMenu(bubbleEl, msg) {
+  if (openBubbleMenuFor && openBubbleMenuFor.dataset.forMsg === msg.id) {
+    closeBubbleMenu();
+    return;
+  }
+  closeBubbleMenu();
+  closeReactionPicker();
+
+  const menu = document.createElement('div');
+  menu.className = 'bubble-menu';
+  menu.dataset.forMsg = msg.id;
+
+  const items = [];
+
+  items.push({ icon: '😊', label: 'রিয়েকশন দিন', action: () => openReactionPicker(bubbleEl, msg) });
+  items.push({ icon: '↩', label: 'উত্তর দিন', action: () => startReply(msg) });
+  items.push({ icon: '➦', label: 'ফরওয়ার্ড করুন', action: () => openForwardPicker(msg) });
+
+  if (msg.kind === 'text' && !msg.deleted_at) {
+    items.push({
+      icon: '📋',
+      label: 'কপি করুন',
+      action: async () => {
+        try {
+          await navigator.clipboard.writeText(msg.body);
+          toast('কপি হয়েছে');
+        } catch {
+          toast('কপি করা যায়নি');
+        }
+      }
+    });
+  }
+
+  if (msg.sender_id === currentUser.id && msg.kind === 'text') {
+    items.push({ icon: '✎', label: 'এডিট করুন', action: () => startEdit(msg) });
+  }
+
+  if (msg.sender_id === currentUser.id) {
+    items.push({
+      icon: '🗑',
+      label: 'মুছে ফেলুন',
+      danger: true,
+      action: async () => {
+        try {
+          await deleteMessage(msg.id);
+        } catch {
+          toast('মেসেজ মুছা যায়নি');
+        }
+      }
+    });
+  }
+
+  for (const item of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bubble-menu-item' + (item.danger ? ' danger' : '');
+    btn.innerHTML = `<span class="bubble-menu-icon">${item.icon}</span><span>${item.label}</span>`;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeBubbleMenu();
+      await item.action();
+    });
+    menu.appendChild(btn);
+  }
+
+  bubbleEl.appendChild(menu);
+  bubbleEl.querySelector('.bubble-chevron')?.classList.add('force-visible');
+  openBubbleMenuFor = menu;
+}
+
+function closeBubbleMenu() {
+  if (openBubbleMenuFor) {
+    openBubbleMenuFor.closest('.bubble')?.querySelector('.bubble-chevron')?.classList.remove('force-visible');
+    openBubbleMenuFor.remove();
+    openBubbleMenuFor = null;
+  }
+}
+
+document.addEventListener('click', closeBubbleMenu);
 
 function renderReactionsAndTicks(container, msg) {
   if (!container) return;
@@ -683,6 +787,88 @@ function closeReactionPicker() {
 }
 
 document.addEventListener('click', closeReactionPicker);
+
+// ---------- Forward picker ----------
+let forwardChatsCache = [];
+
+async function openForwardPicker(msg) {
+  closeBubbleMenu();
+  closeReactionPicker();
+  forwardTargetMsg = msg;
+  forwardSelectedIds = new Set();
+  forwardSearch.value = '';
+  forwardConfirmBtn.disabled = true;
+  forwardConfirmBtn.textContent = 'ফরওয়ার্ড করুন';
+  forwardPanel.classList.remove('hidden');
+
+  try {
+    forwardChatsCache = await loadMyChats(currentUser.id);
+  } catch {
+    forwardChatsCache = [];
+    toast('চ্যাট তালিকা লোড করা যায়নি');
+  }
+  renderForwardChatList();
+}
+
+function closeForwardPicker() {
+  forwardPanel.classList.add('hidden');
+  forwardTargetMsg = null;
+  forwardSelectedIds.clear();
+}
+
+function renderForwardChatList() {
+  const query = forwardSearch.value.trim().toLowerCase();
+  forwardChatList.innerHTML = '';
+
+  const filtered = forwardChatsCache.filter((chat) => {
+    const label = chat.isGroup ? chat.name || 'গ্রুপ' : chat.peer?.display_name || '';
+    return label.toLowerCase().includes(query);
+  });
+
+  if (!filtered.length) {
+    forwardChatList.innerHTML = `<li class="empty-state" style="padding:24px;">কোনো চ্যাট পাওয়া যায়নি</li>`;
+    return;
+  }
+
+  for (const chat of filtered) {
+    const label = chat.isGroup ? chat.name || 'গ্রুপ' : chat.peer?.display_name || 'অজানা';
+    const avatar = chat.isGroup ? '' : chat.peer?.avatar_url || '';
+    const li = document.createElement('li');
+    li.className = 'forward-chat-item' + (forwardSelectedIds.has(chat.id) ? ' checked' : '');
+    li.innerHTML = `
+      <div class="avatar-ring sm">${avatar ? `<img class="avatar" src="${avatar}" alt="" />` : `<div class="avatar" style="display:flex;align-items:center;justify-content:center;">👥</div>`}</div>
+      <strong>${escapeHtml(label)}</strong>
+      <span class="forward-checkbox">${forwardSelectedIds.has(chat.id) ? '✓' : ''}</span>
+    `;
+    li.addEventListener('click', () => {
+      if (forwardSelectedIds.has(chat.id)) forwardSelectedIds.delete(chat.id);
+      else forwardSelectedIds.add(chat.id);
+      renderForwardChatList();
+      forwardConfirmBtn.disabled = forwardSelectedIds.size === 0;
+      forwardConfirmBtn.textContent =
+        forwardSelectedIds.size > 0 ? `ফরওয়ার্ড করুন (${forwardSelectedIds.size})` : 'ফরওয়ার্ড করুন';
+    });
+    forwardChatList.appendChild(li);
+  }
+}
+
+forwardSearch.addEventListener('input', renderForwardChatList);
+closeForwardBtn.addEventListener('click', closeForwardPicker);
+forwardPanel.addEventListener('click', (e) => e.stopPropagation());
+
+forwardConfirmBtn.addEventListener('click', async () => {
+  if (!forwardTargetMsg || forwardSelectedIds.size === 0) return;
+  forwardConfirmBtn.disabled = true;
+  try {
+    await forwardMessage(forwardTargetMsg, [...forwardSelectedIds], currentUser.id);
+    toast('ফরওয়ার্ড করা হয়েছে');
+    closeForwardPicker();
+    await refreshChatList();
+  } catch (err) {
+    toast('ফরওয়ার্ড করা যায়নি: ' + err.message);
+    forwardConfirmBtn.disabled = false;
+  }
+});
 
 // ---------- Reply / Edit ----------
 function startReply(msg) {
