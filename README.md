@@ -127,8 +127,14 @@ supabase functions deploy send-push --no-verify-jwt
 ```sql
 fn_url text := 'https://<PROJECT_REF>.supabase.co/functions/v1/send-push';
 fn_secret text := '<WEBHOOK_SECRET>';
+begin
+  if fn_url like '%<PROJECT_REF>%' or fn_secret like '%<WEBHOOK_SECRET>%' then
+    return new; -- এখনো বসানো হয়নি — স্কিপ করুন
+  end if;
 ```
-`<PROJECT_REF>` কে আপনার Supabase প্রজেক্ট রেফ দিয়ে এবং `<WEBHOOK_SECRET>` কে ৩.৩-এ সেট করা মানটা দিয়ে বদলে **দুইটা ফাংশনেই** (মেসেজ ও কল, দুই জায়গায়) রিপ্লেস করুন, তারপর পুরো `schema.sql` আবার SQL Editor-এ রান করুন।
+`<PROJECT_REF>` কে আপনার Supabase প্রজেক্ট রেফ দিয়ে এবং `<WEBHOOK_SECRET>` কে ৩.৩-এ সেট করা মানটা দিয়ে বদলে **দুইটা ফাংশনেই** (মেসেজ ও কল, দুই জায়গায়) রিপ্লেস করুন — `fn_url`/`fn_secret` এর ডিক্লেয়ারেশন **আর** উপরের `if` গার্ড-লাইন দুই জায়গাতেই একই মান বসবে। তারপর `supabase/migration_7_fix_push_notifications.sql` অথবা পুরো `schema.sql` SQL Editor-এ রান করুন।
+
+> **🐛 আগে যে বাগ ছিল (এখন ফিক্সড):** এই গার্ড-লাইনটা (`if fn_url like '%...%' then return new`) আগে ভুলভাবে *আসল, ইতিমধ্যে-বসানো* প্রজেক্ট-রেফ দিয়ে লেখা ছিল, `<PROJECT_REF>` প্লেসহোল্ডার দিয়ে না। ফলে URL সঠিকভাবে পূরণ করার পরও এই চেক সবসময় true থাকত (URL-এ তো নিজের প্রজেক্ট-রেফ থাকবেই), আর ফাংশন প্রতিবার নীরবে স্কিপ হয়ে যেত — pg_net কখনো কলই হতো না। **এটাই "অ্যাপ বন্ধ থাকলে কোনো নোটিফিকেশন না আসা"-র আসল কারণ ছিল**, VAPID/সাবস্ক্রিপশন সেটআপ ঠিক থাকলেও। এখন গার্ডটা `<PROJECT_REF>`/`<WEBHOOK_SECRET>` এর আক্ষরিক `< >` সিনট্যাক্সের সাথে মেলে, যা কোনো বাস্তব মানে থাকতে পারে না।
 
 > **⚠️ কেন হার্ডকোড করা, `alter database ... set app.settings.x` কেন নয়?** আগের ভার্সনে `current_setting('app.settings.x')` দিয়ে করা হতো, কিন্তু Supabase-এর pooled connection-এ session-level GUC অনির্ভরযোগ্যভাবে propagate হয় — ফলে ট্রিগার প্রায়ই নীরবে স্কিপ হয়ে যেত (কোনো এরর ছাড়াই, মেসেজ/কল ঠিকই কাজ করত কিন্তু পুশ কখনো পাঠানো হতো না)। ফাংশনের ভেতরে সরাসরি বসানো নির্ভরযোগ্য, এবং যেহেতু ফাংশনটা `security definer` ও শুধু ট্রিগার থেকেই কল হয় (ক্লায়েন্ট থেকে সরাসরি না), এটা নিরাপদ।
 
