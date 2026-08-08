@@ -35,7 +35,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; width: 100%; overflow-x: hidden; }
+html, body { height: 100%; }
 body {
   margin: 0;
   background: var(--ink-950);
@@ -43,9 +43,6 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  /* --vh জাভাস্ক্রিপ্ট (main.js) থেকে সেট হয় — পুরনো ব্রাউজার/ডিভাইসে (যেখানে 100dvh
-     সাপোর্ট নেই, বা মোবাইলে ব্রাউজারের ঠিকানা-বার দেখানো/লুকানোর সময়) সঠিক উচ্চতা
-     বজায় রাখার জন্য fallback। dvh সাপোর্ট থাকলে সেটাই প্রাধান্য পাবে (নিচে override)। */
 }
 h1, h2, h3, strong { font-family: var(--font-display); }
 button { font-family: inherit; cursor: pointer; }
@@ -53,15 +50,8 @@ input { font-family: inherit; }
 :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
 .hidden { display: none !important; }
 
-#app {
-  height: calc(var(--vh, 1vh) * 100); /* fallback: সব ব্রাউজারে কাজ করে */
-  height: 100dvh; /* আধুনিক ব্রাউজারে ঠিকানা-বার/কীবোর্ড অনুযায়ী সঠিকভাবে অ্যাডজাস্ট হয় */
-  width: 100%;
-  max-width: 100vw;
-  position: relative;
-  overflow: hidden;
-}
-.screen { height: 100%; width: 100%; }
+#app { height: 100dvh; position: relative; }
+.screen { height: 100%; }
 
 /* ---------------- Auth screen ---------------- */
 #auth-screen {
@@ -72,11 +62,7 @@ input { font-family: inherit; }
     radial-gradient(1200px 600px at 20% -10%, rgba(31,158,124,0.18), transparent 60%),
     radial-gradient(900px 500px at 100% 110%, rgba(212,175,106,0.10), transparent 60%),
     var(--ink-950);
-  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
-    max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
-  /* খাটো স্ক্রিনে (ল্যান্ডস্কেপ ফোন, ছোট ট্যাবলেট) কার্ডটা যদি ভিউপোর্টের চেয়ে লম্বা হয়ে
-     যায়, তাহলে যেন কনটেন্ট কেটে না গিয়ে স্ক্রল করা যায় */
-  overflow-y: auto;
+  padding: 24px;
 }
 .auth-card {
   width: 100%;
@@ -86,7 +72,6 @@ input { font-family: inherit; }
   border-radius: var(--radius-lg);
   padding: 36px 28px;
   box-shadow: var(--shadow-1);
-  margin: auto;
 }
 .brand { text-align: center; margin-bottom: 28px; }
 .brand-mark { display: inline-flex; margin-bottom: 10px; }
@@ -163,7 +148,7 @@ input { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: max(18px, env(safe-area-inset-top)) 18px 12px;
+  padding: 18px 18px 12px;
 }
 .me { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .me-info { display: flex; flex-direction: column; min-width: 0; }
@@ -299,7 +284,7 @@ input { font-family: inherit; }
 
 .chat-header {
   display: flex; align-items: center; gap: 12px;
-  padding: max(12px, env(safe-area-inset-top)) 18px 12px; border-bottom: 1px solid var(--line);
+  padding: 12px 18px; border-bottom: 1px solid var(--line);
   background: var(--ink-900);
 }
 .back-btn { display: none; }
@@ -347,30 +332,87 @@ input { font-family: inherit; }
 }
 .reply-quote-name { font-weight: 700; display: block; font-size: 11.5px; }
 
-.bubble-actions {
-  display: flex; gap: 4px; margin-top: 3px; opacity: 0; transition: opacity 0.15s ease;
+/* ---------------- WhatsApp-স্টাইল কর্নার বাটন: বাম-শেয়ার / ডান-chevron ---------------- */
+.bubble-corner-row {
+  position: absolute; top: 2px; display: flex; gap: 0;
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
 }
-.bubble-row:hover .bubble-actions { opacity: 1; }
-.bubble-action-btn {
-  background: var(--ink-700); border: 1px solid var(--line); color: var(--text-dim);
-  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+.bubble-row:hover .bubble-corner-row,
+.bubble-corner-row.force-visible {
+  opacity: 1; transform: translateY(0); pointer-events: auto;
 }
-.bubble-action-btn:hover { color: var(--text); border-color: var(--emerald); }
+/* বাবলের ঠিক বাইরে বসানো — বাম কোণায় শেয়ার আইকন, ডান কোণায় chevron, দুইপাশে দুই বাটন */
+.bubble.mine .bubble-corner-row { left: -74px; }
+.bubble.theirs .bubble-corner-row { right: -74px; flex-direction: row-reverse; }
+
+.bubble-corner-btn {
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--ink-800); color: var(--text-dim); font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-2); transition: all 0.15s ease; flex-shrink: 0;
+}
+.bubble-corner-btn:hover { color: var(--emerald); border-color: var(--emerald); background: var(--emerald-soft); transform: scale(1.08); }
+.bubble-share-btn { margin-right: 4px; }
+.bubble.theirs .bubble-share-btn { margin-right: 0; margin-left: 4px; }
+.bubble-chevron.force-visible,
+.bubble-corner-row.force-visible .bubble-chevron { color: var(--emerald); border-color: var(--emerald); }
+
+/* খুব সরু স্ক্রিনে (≤ 400px) বাবলের বাইরে কর্নার বাটন বসানোর মতো জায়গা নাও থাকতে পারে —
+   তাই সেখানে বাটনগুলো বাবলের ভেতরের কোণায় ছোট overlay হিসেবে বসে, বাইরে ভেসে থাকে না।
+   এটা আগে কল-কন্ট্রোল বাটন স্ক্রিনের বাইরে চলে যাওয়ার বাগের মতো সমস্যা এড়ানোর জন্য। */
+@media (max-width: 400px) {
+  .bubble.mine .bubble-corner-row,
+  .bubble.theirs .bubble-corner-row {
+    left: auto; right: 4px; top: -4px; flex-direction: row;
+    background: var(--ink-800); border: 1px solid var(--line); border-radius: 20px;
+    padding: 2px; box-shadow: var(--shadow-2);
+  }
+  .bubble-corner-btn { width: 26px; height: 26px; font-size: 11.5px; border: none; box-shadow: none; }
+  .bubble-share-btn, .bubble.theirs .bubble-share-btn { margin: 0; }
+}
+
+/* ---------------- মেসেজ অপশন ড্রপডাউন (▾ চাপলে) — প্রিমিয়াম ডার্ক মেনু ---------------- */
+.bubble-menu {
+  position: absolute; top: 32px; z-index: 12; min-width: 190px;
+  background: linear-gradient(180deg, var(--ink-800), var(--ink-900));
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1); padding: 6px; overflow: hidden;
+  animation: menu-in 0.14s ease;
+}
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.bubble.mine .bubble-menu { right: 0; }
+.bubble.theirs .bubble-menu { left: 0; }
+.bubble-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; color: var(--text); font-size: 13.5px;
+  padding: 9px 10px; border-radius: 8px; text-align: left; transition: background 0.12s ease;
+}
+.bubble-menu-item:hover { background: var(--ink-700); }
+.bubble-menu-item.danger { color: var(--danger); }
+.bubble-menu-item.danger:hover { background: rgba(226,87,76,0.14); }
+.bubble-menu-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
 
 .reactions-row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
 .reaction-chip {
   background: var(--ink-700); border: 1px solid var(--line); border-radius: 20px;
   padding: 1px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 3px;
+  transition: all 0.12s ease; cursor: pointer;
 }
+.reaction-chip:hover { border-color: var(--emerald); transform: scale(1.05); }
 .reaction-chip.mine { border-color: var(--emerald); background: var(--emerald-soft); }
 
 .reaction-picker {
-  position: absolute; bottom: 100%; margin-bottom: 6px; background: var(--ink-800);
-  border: 1px solid var(--line); border-radius: 24px; padding: 6px 8px; display: flex; gap: 6px;
-  box-shadow: var(--shadow-1); z-index: 5;
+  position: absolute; bottom: 100%; margin-bottom: 8px; background: linear-gradient(180deg, var(--ink-800), var(--ink-900));
+  border: 1px solid var(--line); border-radius: 26px; padding: 7px 10px; display: flex; gap: 7px;
+  box-shadow: var(--shadow-1); z-index: 12; animation: menu-in 0.14s ease;
 }
-.reaction-picker button { background: none; border: none; font-size: 19px; padding: 2px; }
-.reaction-picker button:hover { transform: scale(1.2); }
+.reaction-picker button {
+  background: none; border: none; font-size: 21px; padding: 3px; border-radius: 50%;
+  transition: transform 0.15s ease, background 0.15s ease; line-height: 1;
+}
+.reaction-picker button:hover { transform: scale(1.35) translateY(-2px); background: var(--emerald-soft); }
 
 .attachment-bubble { display: flex; flex-direction: column; gap: 6px; }
 .attachment-image { max-width: 220px; border-radius: var(--radius-sm); display: block; }
@@ -449,8 +491,7 @@ input { font-family: inherit; }
 
 .composer {
   display: flex; gap: 8px; align-items: center;
-  padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--line); background: var(--ink-900);
+  padding: 14px 18px; border-top: 1px solid var(--line); background: var(--ink-900);
 }
 .composer input[type="text"] {
   flex: 1; background: var(--ink-700); border: 1px solid var(--line);
@@ -481,12 +522,6 @@ input { font-family: inherit; }
 .call-overlay {
   position: fixed; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  /* খাটো স্ক্রিনে (ল্যান্ডস্কেপ ফোনে ভিডিও কল) সব বাটন এক নজরে না আঁটলে যেন স্ক্রল করে
-     দেখা যায়, কোনো বাটন একদম অদৃশ্য/অ্যাক্সেসযোগ্যহীন না হয়ে যায় */
-  overflow-y: auto;
-  box-sizing: border-box;
 }
 .call-bg { position: absolute; inset: 0; background: radial-gradient(circle at 50% 20%, var(--ink-700), var(--ink-950) 70%); }
 .call-content {
@@ -581,17 +616,11 @@ input { font-family: inherit; }
 .forward-footer { padding: 14px 18px; border-top: 1px solid var(--line); }
 .forward-footer .btn-primary { width: 100%; }
 
-/* ফরওয়ার্ড করা মেসেজের ট্যাগ ও অ্যাটাচমেন্টে ছোট ফরওয়ার্ড বাটন */
+/* ফরওয়ার্ড করা মেসেজের ট্যাগ */
 .forwarded-tag {
   font-size: 11px; color: var(--text-mute); font-style: italic;
   display: flex; align-items: center; gap: 4px; margin-bottom: 3px;
 }
-.attachment-forward-btn {
-  background: rgba(0,0,0,0.3); border: none; color: var(--text);
-  width: 26px; height: 26px; border-radius: 50%; font-size: 13px; flex-shrink: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.attachment-forward-btn:hover { background: rgba(0,0,0,0.5); }
 
 /* ---------------- Incoming call toast ---------------- */
 .incoming-call {

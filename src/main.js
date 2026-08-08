@@ -32,20 +32,6 @@ import { EMOJI_CATEGORIES } from './lib/emojiData.js';
 registerServiceWorker();
 unlockAudioOnFirstInteraction();
 
-/** --vh: 100dvh সাপোর্ট না-করা পুরনো ব্রাউজারে (এবং মোবাইলে ঠিকানা-বার/অন-স্ক্রিন কীবোর্ড
- *  দেখা/লুকানোর সময়) app-কে সঠিক উচ্চতায় ফিট রাখার fallback। visualViewport থাকলে সেটাই
- *  বেশি নির্ভুল, কারণ কীবোর্ড ওঠার সময় innerHeight অনেক ব্রাউজারে বদলায় না। */
-function setViewportHeightVar() {
-  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.documentElement.style.setProperty('--vh', `${h * 0.01}px`);
-}
-setViewportHeightVar();
-window.addEventListener('resize', setViewportHeightVar);
-window.addEventListener('orientationchange', setViewportHeightVar);
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', setViewportHeightVar);
-}
-
 // নোটিফিকেশনে ট্যাপ করলে service worker postMessage পাঠায় — সঠিক চ্যাট খুলে দিন
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', async (event) => {
@@ -324,7 +310,6 @@ function renderSearchResults(results) {
         openChat(chatId, profile);
       } catch (err) {
         toast(err.message || 'চ্যাট খুলতে সমস্যা হয়েছে');
-        if (err.name === 'SessionExpired') await signOut();
       }
     });
     chatListEl.appendChild(li);
@@ -618,14 +603,13 @@ function buildBubble(msg) {
   if (msg.deleted_at) {
     innerHtml += `এই মেসেজটি মুছে ফেলা হয়েছে`;
   } else if (msg.kind === 'voice') {
-    innerHtml += `<div class="voice-note">🎤<audio controls src="${msg.attachment_url}"></audio><button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button></div>`;
+    innerHtml += `<div class="voice-note">🎤<audio controls src="${msg.attachment_url}"></audio></div>`;
   } else if (msg.kind === 'image') {
-    innerHtml += `<div class="attachment-bubble"><button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button><img class="attachment-image" src="${msg.attachment_url}" alt="ছবি" /></div>`;
+    innerHtml += `<div class="attachment-bubble"><img class="attachment-image" src="${msg.attachment_url}" alt="ছবি" /></div>`;
   } else if (msg.kind === 'file') {
     innerHtml += `<a class="attachment-file" href="${msg.attachment_url}" target="_blank" rel="noopener">
       <span class="attachment-file-icon">📎</span>
       <span class="attachment-file-name">${escapeHtml(msg.attachment_name || 'ফাইল')}</span>
-      <button type="button" class="attachment-forward-btn" data-forward-attachment title="ফরওয়ার্ড">➦</button>
     </a>`;
   } else {
     innerHtml += escapeHtml(msg.body);
@@ -638,30 +622,45 @@ function buildBubble(msg) {
 
   if (!msg.deleted_at) {
     attachLongPressReaction(bubble, msg);
-
-    const forwardIconBtn = bubble.querySelector('[data-forward-attachment]');
-    if (forwardIconBtn) {
-      forwardIconBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openForwardPicker(msg);
-      });
-    }
   }
 
   outer.appendChild(bubble);
 
   if (!msg.deleted_at) {
-    const chevron = document.createElement('button');
-    chevron.type = 'button';
-    chevron.className = 'bubble-chevron';
-    chevron.textContent = '▾';
-    chevron.setAttribute('aria-label', 'মেসেজ অপশন');
-    chevron.addEventListener('click', (e) => {
+    // WhatsApp-স্টাইল: বাবলের বাইরের দুই কোণায় দুটো কর্নার-বাটন —
+    // বাম দিকে শেয়ার/ফরওয়ার্ড আইকন, ডান দিকে অপশন-মেনু (▾) chevron।
+    // মূল বাবলের বাম/ডান, কার প্রান্তে কোনটা বসবে সেটা মেসেজ কার (mine/theirs)
+    // তার উপর নির্ভর করে না — WhatsApp-এ উভয় ধরনের বাবলেই শেয়ার সবসময় বাম, chevron ডান।
+    const cornerRow = document.createElement('div');
+    cornerRow.className = 'bubble-corner-row';
+
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.className = 'bubble-corner-btn bubble-share-btn';
+    shareBtn.innerHTML = '➦';
+    shareBtn.setAttribute('aria-label', 'ফরওয়ার্ড করুন');
+    shareBtn.title = 'ফরওয়ার্ড করুন';
+    shareBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeBubbleMenu();
+      closeReactionPicker();
+      openForwardPicker(msg);
+    });
+
+    const chevronBtn = document.createElement('button');
+    chevronBtn.type = 'button';
+    chevronBtn.className = 'bubble-corner-btn bubble-chevron';
+    chevronBtn.innerHTML = '▾';
+    chevronBtn.setAttribute('aria-label', 'মেসেজ অপশন');
+    chevronBtn.title = 'মেসেজ অপশন';
+    chevronBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleBubbleMenu(bubble, msg);
     });
-    bubble.appendChild(chevron);
+
+    cornerRow.appendChild(shareBtn);
+    cornerRow.appendChild(chevronBtn);
+    bubble.appendChild(cornerRow);
 
     const reactionsRow = document.createElement('div');
     reactionsRow.className = 'reactions-row';
@@ -702,7 +701,7 @@ function attachLongPressReaction(bubbleEl, msg) {
   const cancel = () => clearTimeout(pressTimer);
 
   bubbleEl.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('[data-forward-attachment], .bubble-chevron, audio, a')) return;
+    if (e.target.closest('.bubble-corner-btn, audio, a')) return;
     start(e.clientX, e.clientY);
   });
   bubbleEl.addEventListener('pointermove', (e) => move(e.clientX, e.clientY));
@@ -784,13 +783,13 @@ function toggleBubbleMenu(bubbleEl, msg) {
   }
 
   bubbleEl.appendChild(menu);
-  bubbleEl.querySelector('.bubble-chevron')?.classList.add('force-visible');
+  bubbleEl.querySelector('.bubble-corner-row')?.classList.add('force-visible');
   openBubbleMenuFor = menu;
 }
 
 function closeBubbleMenu() {
   if (openBubbleMenuFor) {
-    openBubbleMenuFor.closest('.bubble')?.querySelector('.bubble-chevron')?.classList.remove('force-visible');
+    openBubbleMenuFor.closest('.bubble')?.querySelector('.bubble-corner-row')?.classList.remove('force-visible');
     openBubbleMenuFor.remove();
     openBubbleMenuFor = null;
   }
@@ -1481,8 +1480,7 @@ async function renderCallHistory() {
         await openChat(chatId, target);
         await startOutgoingCall(log.is_video);
       } catch (err) {
-        toast(err.name === 'SessionExpired' ? err.message : 'কল করা যায়নি');
-        if (err.name === 'SessionExpired') await signOut();
+        toast('কল করা যায়নি');
       }
     });
     callHistoryList.appendChild(li);
